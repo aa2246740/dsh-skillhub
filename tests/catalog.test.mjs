@@ -74,7 +74,7 @@ test('leaf off and all on', async () => {
   assert.equal(allOn.offered.length, 2)
 })
 
-test('session snapshot ignores a later project document', async () => {
+test('Chat overrides win while untouched Skills inherit Project and Global', async () => {
   const root = await mkdtemp(join(tmpdir(), 'skillhub-'))
   const agent = join(root, 'agent')
   const dsh = join(root, 'dsh')
@@ -82,20 +82,17 @@ test('session snapshot ignores a later project document', async () => {
   await skillFile(join(agent, 'code', 'tdd'), 'tdd')
   await mkdir(dsh, { recursive: true })
   const essayId = skillId('agent', 'writing/essays/SKILL.md')
-  const snapshot = VisibilityDocument.off([essayId])
-  const isolated = resolveCatalog({
+  const chat = VisibilityDocument.off([essayId])
+  const resolved = resolveCatalog({
     agentHome: agent,
     dshHome: dsh,
-    project: VisibilityDocument.empty(),
-    session: snapshot,
+    global: VisibilityDocument.global('off'),
+    project: VisibilityDocument.on([essayId]),
+    session: chat,
   })
-  assert.deepEqual(isolated.offered.map(skill => skill.name), ['tdd'])
-  const preview = resolveCatalog({
-    agentHome: agent,
-    dshHome: dsh,
-    project: VisibilityDocument.empty(),
-  })
-  assert.equal(preview.offered.length, 2)
+  assert.deepEqual(resolved.offered, [])
+  assert.equal(resolved.inventory.find(skill => skill.name === 'essays').source, 'session')
+  assert.equal(resolved.inventory.find(skill => skill.name === 'tdd').source, 'global')
 })
 
 test('collision lists both homes and keeps both offered', async () => {

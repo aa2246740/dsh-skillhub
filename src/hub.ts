@@ -8,14 +8,15 @@ import {
   findGroupByRel,
   resolveCatalog,
   type Catalog,
-  type Gate,
   type HomeKind,
+  type LayerGate,
   type PackNode,
   type SkillId,
   type VisibilityDocument,
+  type VisibilityLayer,
 } from './catalog.ts'
 
-export type LayerName = 'global' | 'project' | 'session'
+export type LayerName = VisibilityLayer
 
 export type CatalogQuery = {
   readonly sessionId?: string
@@ -29,27 +30,100 @@ export interface HubPaths {
   readonly storeDir: string
 }
 
-export type ToggleTarget =
-  | { kind: 'skill'; id: SkillId; on: boolean }
-  | { kind: 'group'; packHome: HomeKind; packName: string; rel: string; on: boolean }
-  | { kind: 'home'; home: HomeKind; on: boolean }
-  | { kind: 'ids'; ids: readonly SkillId[]; on: boolean }
-  | { kind: 'all'; on: boolean }
+export type VisibilityTarget =
+  | { readonly kind: 'skill'; readonly id: SkillId }
+  | { readonly kind: 'group'; readonly packHome: HomeKind; readonly packName: string; readonly rel: string }
+  | { readonly kind: 'home'; readonly home: HomeKind }
+  | { readonly kind: 'ids'; readonly ids: readonly SkillId[] }
+  | { readonly kind: 'all' }
 
-function readDoc(path: string): VisibilityDocument {
-  if (!existsSync(path)) return { gates: {} }
+export type ToggleTarget = VisibilityTarget & { readonly on: boolean }
+
+function emptyDocument(layer: LayerName): VisibilityDocument {
+  return {
+    version: 2,
+    default: layer === 'global' ? 'on' : 'inherit',
+    gates: {},
+  }
+}
+
+function parsedGates(value: unknown, layer: LayerName, path: string): Record<string, LayerGate> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`Invalid SkillHub visibility document: ${path}`)
+  }
+  const gates: Record<string, LayerGate> = {}
+  for (const [id, gate] of Object.entries(value)) {
+    if (gate !== 'on' && gate !== 'off' && !(layer !== 'global' && gate === 'inherit')) {
+      throw new Error(`Invalid SkillHub visibility document: ${path}`)
+    }
+    gates[id] = gate
+  }
+  return gates
+}
+
+function legacyDefault(layer: LayerName): LayerGate {
+  // Version 1 used different missing-key semantics at each layer. Preserve
+  // those semantics exactly instead of trying to infer a bulk default from
+  // the gates that happened to be present in the file.
+  return layer === 'project' ? 'inherit' : 'on'
+}
+
+function readDoc(path: string, layer: LayerName): VisibilityDocument {
+  if (!existsSync(path)) return emptyDocument(layer)
+  let raw: unknown
   try {
-    const raw = JSON.parse(readFileSync(path, 'utf8')) as { gates?: Record<string, Gate> }
-    if (raw === null || typeof raw !== 'object' || raw.gates === undefined) return { gates: {} }
-    return { gates: raw.gates }
+    raw = JSON.parse(readFileSync(path, 'utf8')) as unknown
   } catch {
-    return { gates: {} }
+    throw new Error(`Invalid SkillHub visibility document: ${path}`)
+  }
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new Error(`Invalid SkillHub visibility document: ${path}`)
+  }
+  const object = raw as {
+    version?: unknown
+    default?: unknown
+    gates?: unknown
+    legacySnapshot?: unknown
+  }
+  const gates = parsedGates(object.gates, layer, path)
+  if (object.version === undefined) {
+    return {
+      version: 2,
+      default: legacyDefault(layer),
+      gates,
+      ...layer === 'session' ? { legacySnapshot: true } : {},
+    }
+  }
+  if (object.version !== 2) {
+    throw new Error(`Unsupported SkillHub visibility document version: ${path}`)
+  }
+  const defaultGate = object.default
+  if (
+    defaultGate !== 'on'
+    && defaultGate !== 'off'
+    && !(layer !== 'global' && defaultGate === 'inherit')
+  ) {
+    throw new Error(`Invalid SkillHub visibility document: ${path}`)
+  }
+  if (object.legacySnapshot !== undefined && typeof object.legacySnapshot !== 'boolean') {
+    throw new Error(`Invalid SkillHub visibility document: ${path}`)
+  }
+  return {
+    version: 2,
+    default: defaultGate,
+    gates,
+    ...object.legacySnapshot === true ? { legacySnapshot: true } : {},
   }
 }
 
 function writeDoc(path: string, doc: VisibilityDocument): void {
   mkdirSync(dirnameSafe(path), { recursive: true })
-  writeFileSync(path, `${JSON.stringify({ gates: doc.gates }, null, 2)}\n`)
+  writeFileSync(path, `${JSON.stringify({
+    version: 2,
+    default: doc.default,
+    gates: doc.gates,
+    ...doc.legacySnapshot === true ? { legacySnapshot: true } : {},
+  }, null, 2)}\n`)
 }
 
 function dirnameSafe(path: string): string {
@@ -65,6 +139,24 @@ function normalizeFolder(folder: string): string {
   return resolve(folder)
 }
 
+function optionalFolder(folder: string | undefined): string | undefined {
+  if (folder === undefined || folder.trim() === '') return undefined
+  return normalizeFolder(folder)
+}
+
+function assertSessionId(sessionId: string): void {
+  if (
+    sessionId.trim() === ''
+    || sessionId === '.'
+    || sessionId === '..'
+    || sessionId.includes('/')
+    || sessionId.includes('\\')
+    || sessionId.includes('\0')
+  ) {
+    throw new Error('invalid sessionId for Session visibility')
+  }
+}
+
 function resolvedLayer(query: CatalogQuery): LayerName {
   if (query.layer !== undefined) return query.layer
   if (query.sessionId !== undefined) return 'session'
@@ -76,6 +168,19 @@ function findPack(catalog: Catalog, home: HomeKind, name: string): PackNode | un
   const root = catalog.tree.find(node => node.home === home)
   if (root === undefined) return undefined
   return root.children.find((node): node is PackNode => node.kind === 'pack' && node.name === name)
+}
+
+function targetIds(catalog: Catalog, target: VisibilityTarget): SkillId[] {
+  if (target.kind === 'skill') return [target.id]
+  if (target.kind === 'ids') return [...target.ids]
+  if (target.kind === 'all') return collectSkillGates(catalog.tree).map(row => row.id)
+  if (target.kind === 'home') {
+    return collectSkillGates(catalog.tree.filter(node => node.home === target.home)).map(row => row.id)
+  }
+  const pack = findPack(catalog, target.packHome, target.packName)
+  if (pack === undefined) return []
+  const group = findGroupByRel(pack, target.rel)
+  return group === undefined ? [] : descendantSkillIds(group)
 }
 
 export class SkillHub {
@@ -94,109 +199,126 @@ export class SkillHub {
   }
 
   private sessionPath(sessionId: string): string {
+    assertSessionId(sessionId)
     return join(this.paths.storeDir, 'sessions', `${sessionId}.json`)
   }
 
-  catalog(query: CatalogQuery = {}): Catalog {
-    const global = readDoc(this.globalPath())
-    const folder = query.folder === undefined ? undefined : normalizeFolder(query.folder)
-    const project = folder === undefined ? undefined : readDoc(this.projectPath(folder))
-    const layer = resolvedLayer(query)
-    if (layer === 'global') {
-      return resolveCatalog({
-        agentHome: this.paths.agentHome,
-        dshHome: this.paths.dshHome,
-        global,
-      })
-    }
+  private documentPath(layer: LayerName, sessionId?: string, folder?: string): string {
+    if (layer === 'global') return this.globalPath()
     if (layer === 'project') {
-      return resolveCatalog({
-        agentHome: this.paths.agentHome,
-        dshHome: this.paths.dshHome,
-        global,
-        ...project !== undefined ? { project } : {},
-      })
+      if (folder === undefined || folder === '') throw new Error('folder required for Project visibility')
+      return this.projectPath(folder)
     }
-    let session: VisibilityDocument | undefined
-    if (query.sessionId !== undefined) {
-      const path = this.sessionPath(query.sessionId)
-      if (!existsSync(path)) {
-        const preview = resolveCatalog({
-          agentHome: this.paths.agentHome,
-          dshHome: this.paths.dshHome,
-          global,
-          ...project !== undefined ? { project } : {},
-        })
-        const gates: Record<string, Gate> = {}
-        for (const row of collectSkillGates(preview.tree)) gates[row.id] = row.gate
-        writeDoc(path, { gates })
-      }
-      session = readDoc(path)
+    if (sessionId === undefined || sessionId === '') throw new Error('sessionId required for Session visibility')
+    return this.sessionPath(sessionId)
+  }
+
+  catalog(query: CatalogQuery = {}): Catalog {
+    const layer = resolvedLayer(query)
+    const folder = optionalFolder(query.folder)
+    if (layer === 'project' && folder === undefined) throw new Error('folder required for Project visibility')
+    if (layer === 'session' && query.sessionId === undefined) {
+      throw new Error('sessionId required for Session visibility')
     }
-    return resolveCatalog({
+    const global = readDoc(this.globalPath(), 'global')
+    const project = layer === 'global' || folder === undefined
+      ? undefined
+      : readDoc(this.projectPath(folder), 'project')
+    const session = layer !== 'session' || query.sessionId === undefined
+      ? undefined
+      : readDoc(this.sessionPath(query.sessionId), 'session')
+    const catalog = resolveCatalog({
       agentHome: this.paths.agentHome,
       dshHome: this.paths.dshHome,
       global,
-      ...project !== undefined ? { project } : {},
-      ...session !== undefined ? { session } : {},
+      ...layer !== 'global' && project !== undefined ? { project } : {},
+      ...layer === 'session' && session !== undefined ? { session } : {},
+    })
+    return {
+      ...catalog,
+      layer,
+      ...layer === 'session' && session?.legacySnapshot === true
+        ? { legacySessionSnapshot: true }
+        : {},
+    }
+  }
+
+  toggle(query: {
+    layer: LayerName
+    sessionId?: string
+    folder?: string
+    target: ToggleTarget
+  }): Catalog {
+    const folder = optionalFolder(query.folder)
+    const path = this.documentPath(query.layer, query.sessionId, folder)
+    const catalog = this.catalog({
+      layer: query.layer,
+      ...query.layer === 'session' && query.sessionId !== undefined ? { sessionId: query.sessionId } : {},
+      ...folder !== undefined ? { folder } : {},
+    })
+    const current = readDoc(path, query.layer)
+    if (query.target.kind === 'all') {
+      writeDoc(path, {
+        version: 2,
+        default: query.target.on ? 'on' : 'off',
+        gates: {},
+      })
+    } else {
+      const gates = { ...current.gates }
+      for (const id of targetIds(catalog, query.target)) gates[id] = query.target.on ? 'on' : 'off'
+      writeDoc(path, { ...current, gates })
+    }
+    return this.catalog({
+      layer: query.layer,
+      ...query.layer === 'session' && query.sessionId !== undefined ? { sessionId: query.sessionId } : {},
+      ...folder !== undefined ? { folder } : {},
     })
   }
 
-  toggle(query: { layer: LayerName; sessionId?: string; folder?: string; target: ToggleTarget }): Catalog {
-    const folder = query.folder === undefined ? undefined : normalizeFolder(query.folder)
-    const view: CatalogQuery = {
+  inherit(query: {
+    layer: LayerName
+    sessionId?: string
+    folder?: string
+    target: VisibilityTarget
+  }): Catalog {
+    const folder = optionalFolder(query.folder)
+    const path = this.documentPath(query.layer, query.sessionId, folder)
+    const catalog = this.catalog({
       layer: query.layer,
       ...query.layer === 'session' && query.sessionId !== undefined ? { sessionId: query.sessionId } : {},
       ...folder !== undefined ? { folder } : {},
-    }
-    const catalog = this.catalog(view)
-    const target = query.target
-    const ids: SkillId[] = []
-    if (target.kind === 'skill') ids.push(target.id)
-    else if (target.kind === 'ids') ids.push(...target.ids)
-    else if (target.kind === 'all') {
-      ids.push(...collectSkillGates(catalog.tree).map(row => row.id))
-    } else if (target.kind === 'home') {
-      const home = catalog.tree.filter(node => node.home === target.home)
-      ids.push(...collectSkillGates(home).map(row => row.id))
+    })
+    const current = readDoc(path, query.layer)
+    if (query.target.kind === 'all') {
+      writeDoc(path, query.layer === 'global'
+        ? { version: 2, default: current.default, gates: {} }
+        : emptyDocument(query.layer))
     } else {
-      const pack = findPack(catalog, target.packHome, target.packName)
-      if (pack !== undefined) {
-        const group = findGroupByRel(pack, target.rel)
-        if (group !== undefined) ids.push(...descendantSkillIds(group))
+      const gates = { ...current.gates }
+      for (const id of targetIds(catalog, query.target)) {
+        if (query.layer === 'global' || current.default === 'inherit') delete gates[id]
+        else gates[id] = 'inherit'
       }
+      writeDoc(path, { ...current, gates })
     }
-    const path = query.layer === 'global'
-      ? this.globalPath()
-      : query.layer === 'project' && folder !== undefined
-        ? this.projectPath(folder)
-        : query.sessionId !== undefined
-          ? this.sessionPath(query.sessionId)
-          : this.globalPath()
-    const current = readDoc(path)
-    const gates = { ...current.gates }
-    for (const id of ids) gates[id] = query.target.on ? 'on' : 'off'
-    writeDoc(path, { gates })
-    const next: CatalogQuery = {
+    return this.catalog({
       layer: query.layer,
       ...query.layer === 'session' && query.sessionId !== undefined ? { sessionId: query.sessionId } : {},
       ...folder !== undefined ? { folder } : {},
-    }
-    return this.catalog(next)
+    })
   }
 
   resetSession(sessionId: string, folder?: string): Catalog {
-    const path = this.sessionPath(sessionId)
-    if (existsSync(path)) unlinkSync(path)
-    const next: { sessionId: string; folder?: string } = { sessionId }
-    if (folder !== undefined) next.folder = folder
-    return this.catalog(next)
+    return this.inherit({
+      layer: 'session',
+      sessionId,
+      ...folder !== undefined ? { folder } : {},
+      target: { kind: 'all' },
+    })
   }
 
-  promoteSession(sessionId: string, folder: string): Catalog {
-    const session = readDoc(this.sessionPath(sessionId))
-    writeDoc(this.projectPath(folder), session)
-    return this.catalog({ sessionId, folder })
+  resetProject(folder: string): Catalog {
+    return this.inherit({ layer: 'project', folder, target: { kind: 'all' } })
   }
 
   install(sourceDir: string, home: HomeKind): Catalog {

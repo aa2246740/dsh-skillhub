@@ -10,28 +10,36 @@ export function isHostSkillName(name: string): boolean {
 
 export type HomeKind = 'agent' | 'dsh'
 export type Gate = 'on' | 'off'
+export type VisibilityLayer = 'global' | 'project' | 'session'
+export type LayerGate = Gate | 'inherit'
 export type GroupGate = 'on' | 'off' | 'mixed'
 export type AbsolutePath = string
 export type SkillId = string & { readonly __brand: 'SkillId' }
 export type PackId = string & { readonly __brand: 'PackId' }
 
 export type VisibilityDocument = {
-  readonly gates: Readonly<Record<string, Gate>>
+  readonly version: 2
+  readonly default: LayerGate
+  readonly gates: Readonly<Record<string, LayerGate>>
+  readonly legacySnapshot?: boolean
 }
 
 export const VisibilityDocument = {
   empty(): VisibilityDocument {
-    return { gates: {} }
+    return { version: 2, default: 'inherit', gates: {} }
+  },
+  global(defaultGate: Gate = 'on'): VisibilityDocument {
+    return { version: 2, default: defaultGate, gates: {} }
   },
   off(ids: readonly SkillId[]): VisibilityDocument {
-    const gates: Record<string, Gate> = {}
+    const gates: Record<string, LayerGate> = {}
     for (const id of ids) gates[id] = 'off'
-    return { gates }
+    return { version: 2, default: 'inherit', gates }
   },
   on(ids: readonly SkillId[]): VisibilityDocument {
-    const gates: Record<string, Gate> = {}
+    const gates: Record<string, LayerGate> = {}
     for (const id of ids) gates[id] = 'on'
-    return { gates }
+    return { version: 2, default: 'inherit', gates }
   },
 } as const
 
@@ -76,6 +84,7 @@ export interface OfferedSkill {
 
 export interface ManagedSkill extends OfferedSkill {
   readonly gate: Gate
+  readonly source: VisibilityLayer
 }
 
 export interface Collision {
@@ -91,6 +100,7 @@ export interface SkillNode {
   readonly home: HomeKind
   readonly path: AbsolutePath
   readonly gate: Gate
+  readonly source: VisibilityLayer
   readonly collision: boolean
 }
 
@@ -135,6 +145,7 @@ export interface RootSkillNode {
   readonly home: HomeKind
   readonly path: AbsolutePath
   readonly gate: Gate
+  readonly source: VisibilityLayer
   readonly collision: boolean
 }
 
@@ -153,6 +164,8 @@ export interface Catalog {
   readonly tree: readonly HomeRoot[]
   readonly collisions: readonly Collision[]
   readonly broken: readonly BrokenEntry[]
+  readonly layer?: VisibilityLayer
+  readonly legacySessionSnapshot?: boolean
 }
 
 export interface ResolveInput {
@@ -243,16 +256,25 @@ function listEntries(dir: string): string[] {
   }
 }
 
-function gateOf(
+function applyVisibility(
+  id: SkillId,
+  document: VisibilityDocument | undefined,
+  source: VisibilityLayer,
+  fallback: { gate: Gate; source: VisibilityLayer },
+): { gate: Gate; source: VisibilityLayer } {
+  if (document === undefined) return fallback
+  const value = document.gates[id] ?? document.default
+  if (value === 'inherit') return fallback
+  return { gate: value, source }
+}
+
+function gateStateOf(
   id: SkillId,
   input: ResolveInput,
-): Gate {
-  if (input.session !== undefined) {
-    return input.session.gates[id] ?? 'on'
-  }
-  const global = input.global?.gates[id] ?? 'on'
-  if (input.project === undefined) return global
-  return input.project.gates[id] ?? global
+): { gate: Gate; source: VisibilityLayer } {
+  const global = applyVisibility(id, input.global, 'global', { gate: 'on', source: 'global' })
+  const project = applyVisibility(id, input.project, 'project', global)
+  return applyVisibility(id, input.session, 'session', project)
 }
 
 function combineGates(gates: Gate[]): GroupGate {
@@ -301,6 +323,7 @@ function walkGroup(
         home,
         path: skillPath,
         gate: 'on',
+        source: 'global',
         collision: false,
       }
     }
@@ -390,6 +413,7 @@ function walkHome(home: HomeKind, homeRoot: string, leaves: Leaf[], broken: Brok
         home,
         path,
         gate: 'on',
+        source: 'global',
         collision: false,
       })
       continue
@@ -457,19 +481,18 @@ function applyGatesToTree(
 function applyGatesToNode(node: CatalogNode, collisions: ReadonlySet<string>, input: ResolveInput): CatalogNode {
   if (node.kind === 'broken') return node
   if (node.kind === 'root-skill') {
+    const state = gateStateOf(node.id, input)
     return {
       ...node,
-      gate: gateOf(node.id, input),
+      ...state,
       collision: collisions.has(node.id),
     }
   }
-  const skill = node.skill === null
-    ? null
-    : {
-        ...node.skill,
-        gate: gateOf(node.skill.id, input),
-        collision: collisions.has(node.skill.id),
-      }
+  const skill = node.skill === null ? null : {
+    ...node.skill,
+    ...gateStateOf(node.skill.id, input),
+    collision: collisions.has(node.skill.id),
+  }
   const children = node.children.map(child => {
     if (child.kind === 'broken') return child
     const next = applyGatesToNode(
@@ -537,7 +560,8 @@ export function resolveCatalog(input: ResolveInput): Catalog {
   const inventory: ManagedSkill[] = []
   for (const leaf of leaves) {
     if (!isHostSkillName(leaf.parsed.name)) continue
-    const gate = gateOf(leaf.id, input)
+    const state = gateStateOf(leaf.id, input)
+    const gate = state.gate
     const invocable = gate === 'on'
     inventory.push({
       id: leaf.id,
@@ -553,6 +577,7 @@ export function resolveCatalog(input: ResolveInput): Catalog {
       },
       content: leaf.parsed.content,
       gate,
+      source: state.source,
     })
   }
 

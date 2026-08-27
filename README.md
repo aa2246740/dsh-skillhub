@@ -1,6 +1,6 @@
 # dsh-skillhub
 
-SkillHub is a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web plugin that lists Skills already on disk in Agent home (`~/.agents/skills`) and DSH home (`~/.dsh/skills`), and lets you turn them on or off for Global, Project, or Session visibility.
+SkillHub is a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web plugin that lists Skills already on disk in Agent home (`~/.agents/skills`) and DSH home (`~/.dsh/skills`). Settings owns Global Defaults; the composer panel owns Project and Chat overrides.
 
 It does not install, copy, or delete skill files. Off leaves the folder in place. Host/plugin skills are out of scope.
 
@@ -17,7 +17,9 @@ Local data stays on the machine:
 | Installed Skills | `~/.agents/skills`, `$DSH_HOME/skills` |
 | Visibility documents | `$DSH_HOME/skillhub/` (`global.json`, `projects/<hash>.json`, `sessions/<id>.json`) |
 
-Project visibility is keyed by folder hash on this user/machine. It is not written into a git repo. Session copies resolve at create and then stay independent.
+Project visibility is keyed by folder hash on this user/machine. It is not written into a git repo. Effective visibility resolves Chat → Project → Global. Project and Chat documents store overrides only, so parent changes immediately reach descendants that still follow them.
+
+Visibility documents use version 2 with a layer default plus per-Skill overrides. Global “All off” therefore also covers Skills added later. Legacy Session snapshots remain explicit until the user chooses **Follow parent for all**.
 
 Do not commit `$DSH_HOME/skillhub/`, `.env`, `.dshx/`, or built `lib/` (client bundles embed absolute machine paths).
 

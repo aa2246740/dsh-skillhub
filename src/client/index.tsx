@@ -50,26 +50,12 @@ export function apply(ctx: ClientContext) {
 }
 
 function SkillHubSettings(props: PropsRuntime<'settings.section'> & PropsLocale<'skillhub'>) {
-  const current = props.useSessions(list => {
-    const id = list.current
-    return id === undefined ? undefined : list.byId[id]
-  })
-  const workspacePath = props.useWorkspaces(list => {
-    const id = list.recentWorkspaceId
-    if (id !== undefined) {
-      const row = list.items.find(item => item.workspaceId === id)
-      if (row !== undefined) return row.path
-    }
-    return list.items[0]?.path ?? ''
-  })
-  const folder = current?.cwd ?? workspacePath
   return (
     <SkillHubPanel
-      defaultLayer={current === undefined ? 'global' : 'session'}
+      defaultLayer="global"
+      layers={['global']}
       surface="page"
       t={props.t}
-      {...current !== undefined ? { sessionId: current.id } : {}}
-      {...folder !== '' ? { folder } : {}}
     />
   )
 }
@@ -144,6 +130,7 @@ function SkillHubChip(props: PropsRuntime<'conversation.input.left'> & PropsLoca
             <SkillHubPanel
               sessionId={sessionId}
               defaultLayer="session"
+              layers={['session', 'project']}
               surface="popover"
               t={props.t}
               {...folder !== '' ? { folder } : {}}

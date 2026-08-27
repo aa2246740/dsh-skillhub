@@ -1,4 +1,5 @@
 export type LayerName = 'global' | 'project' | 'session'
+export type GateSource = LayerName
 export type HomeKind = 'agent' | 'dsh'
 export type Gate = 'on' | 'off'
 export type GroupGate = 'on' | 'off' | 'mixed'
@@ -20,6 +21,8 @@ export type CatalogPayload = {
   tree: HomeRoot[]
   collisions: { name: string; skills: string[] }[]
   broken: { path: string; reason: BrokenReason }[]
+  layer?: LayerName
+  legacySessionSnapshot: boolean
   agentHomeDeleteWarning?: string
 }
 
@@ -35,6 +38,7 @@ export type SkillRef = {
   name: string
   description?: string
   gate: Gate
+  source: GateSource
   collision: boolean
 }
 
@@ -58,6 +62,7 @@ export type CatalogNode =
     home: HomeKind
     path: string
     gate: Gate
+    source: GateSource
     collision: boolean
   }
   | {

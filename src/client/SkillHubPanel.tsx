@@ -37,6 +37,12 @@ function layerLabel(t: Copy, layer: LayerName): string {
   return t('layer.global')
 }
 
+function sourceLabel(t: Copy, source: LayerName): string {
+  if (source === 'session') return t('source.session')
+  if (source === 'project') return t('source.project')
+  return t('source.global')
+}
+
 function gateWord(t: Copy, gate: Gate | GroupGate): string {
   if (gate === 'on') return t('gate.on')
   if (gate === 'off') return t('gate.off')
@@ -102,6 +108,30 @@ function collectSkillIds(nodes: readonly (CatalogNode | GroupChild)[]): string[]
   return ids
 }
 
+function collectSkills(nodes: readonly (CatalogNode | GroupChild)[]): SkillRef[] {
+  const skills: SkillRef[] = []
+  const visit = (list: readonly (CatalogNode | GroupChild)[]) => {
+    for (const node of list) {
+      if (node.kind === 'broken') continue
+      if (node.kind === 'root-skill') {
+        skills.push({
+          id: node.id,
+          name: node.name,
+          ...node.description !== undefined ? { description: node.description } : {},
+          gate: node.gate,
+          source: node.source,
+          collision: node.collision,
+        })
+        continue
+      }
+      if (node.skill !== null) skills.push(node.skill)
+      visit(node.children)
+    }
+  }
+  visit(nodes)
+  return skills
+}
+
 function skillCountLabel(t: Copy, total: number): string {
   return t(total === 1 ? 'count.skillsOne' : 'count.skills', { n: total })
 }
@@ -128,6 +158,7 @@ function soleSkill(node: CatalogNode | GroupChild): SkillRef | null {
       name: node.name,
       ...node.description !== undefined ? { description: node.description } : {},
       gate: node.gate,
+      source: node.source,
       collision: node.collision,
     }
   }
@@ -231,8 +262,10 @@ function SkillLeaf(props: {
   skill: SkillRef
   label: string
   disabled: boolean
+  layer: LayerName
   t: Copy
   onToggle: (kind: 'skill' | 'group', payload: Record<string, unknown>, on: boolean) => void
+  onInherit: (kind: 'skill' | 'group', payload: Record<string, unknown>) => void
 }) {
   const skill = props.skill
   return (
@@ -247,7 +280,21 @@ function SkillLeaf(props: {
       <div className={css.name} {...skill.description !== undefined && skill.description !== '' ? { title: skill.description } : {}}>
         <span className={css.nameText}>{props.label}</span>
         {skill.collision ? <span className={css.collision}>{props.t('badge.collision')}</span> : null}
+        {props.layer === 'global' ? null : <span className={css.source}>{sourceLabel(props.t, skill.source)}</span>}
       </div>
+      {props.layer !== 'global' && skill.source === props.layer
+        ? (
+          <button
+            type="button"
+            className={css.inherit}
+            disabled={props.disabled}
+            aria-label={props.t('inherit.skill', { name: props.label })}
+            onClick={() => props.onInherit('skill', { id: skill.id })}
+          >
+            {props.t('inherit.action')}
+          </button>
+        )
+        : null}
     </div>
   )
 }
@@ -278,6 +325,7 @@ export function SkillHubPanel(props: {
   sessionId?: string
   folder?: string
   defaultLayer: LayerName
+  layers: readonly LayerName[]
   surface: SkillHubSurface
   t: Copy
 }) {
@@ -351,6 +399,11 @@ export function SkillHubPanel(props: {
     }
   }
 
+  const inheritIds = async (ids: readonly string[]) => {
+    if (ids.length === 0) return
+    await mutate('/inherit', toggleBody({ kind: 'ids', ids }))
+  }
+
   const needle = query.trim().toLowerCase()
   const counts = useMemo(() => {
     if (catalog === undefined) return { on: 0, off: 0 }
@@ -368,8 +421,8 @@ export function SkillHubPanel(props: {
         <div className={css.titleRow}>
           <div className={css.titleBlock}>
             <div className={css.eyebrow}>{t('nav')}</div>
-            <h2 className={css.title}>{t('title')}</h2>
-            <p className={css.lede}>{t('lede')}</p>
+            <h2 className={css.title}>{t(props.surface === 'page' ? 'title.global' : 'title.context')}</h2>
+            <p className={css.lede}>{t(props.surface === 'page' ? 'lede.global' : 'lede.context')}</p>
           </div>
           <div className={css.headerActions}>
             <Button
@@ -388,6 +441,18 @@ export function SkillHubPanel(props: {
             >
               {t('allOn')}
             </Button>
+            {layer === 'global'
+              ? null
+              : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={!layerReady || busy || catalog === undefined}
+                  onClick={() => void mutate('/inherit', toggleBody({ kind: 'all' }))}
+                >
+                  {t('allInherit')}
+                </Button>
+              )}
           </div>
         </div>
         {catalog !== undefined
@@ -404,8 +469,11 @@ export function SkillHubPanel(props: {
       </header>
 
       <div className={css.layer} data-ud-check="skillhub-layer">
-        <div className={css.segment} role="radiogroup" aria-label={t('layer.aria')}>
-          {(['session', 'project', 'global'] as const).map(name => {
+        {props.layers.length === 1
+          ? <div className={css.scope}>{layerLabel(t, layer)}</div>
+          : (
+            <div className={css.segment} role="radiogroup" aria-label={t('layer.aria')}>
+              {props.layers.map(name => {
             const disabled = (name === 'session' && !canWriteSession) || (name === 'project' && !canWriteProject)
             return (
               <button
@@ -425,37 +493,12 @@ export function SkillHubPanel(props: {
                 {layerLabel(t, name)}
               </button>
             )
-          })}
-        </div>
+              })}
+            </div>
+          )}
         <p className={css.helper} id="skillhub-layer-help">{layerHelp(t, layer)}</p>
         {layer === 'project' && folder !== ''
           ? <p className={css.path} title={folder}>{folder}</p>
-          : null}
-        {canWriteSession && props.surface === 'page'
-          ? (
-            <div className={css.headerActions}>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={busy}
-                onClick={() => void mutate('/reset', {
-                  sessionId,
-                  ...folder !== '' ? { folder } : {},
-                })}
-              >
-                {t('session.reset')}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={busy || folder === ''}
-                {...folder === '' ? { title: t('session.promoteNeedsWorkspace') } : {}}
-                onClick={() => void mutate('/promote', { sessionId, folder })}
-              >
-                {t('session.promote')}
-              </Button>
-            </div>
-          )
           : null}
       </div>
 
@@ -488,6 +531,9 @@ export function SkillHubPanel(props: {
             </p>
           )
           : null}
+        {catalog?.legacySessionSnapshot === true
+          ? <p className={css.warn} role="status">{t('legacy.snapshot')}</p>
+          : null}
         {catalog === undefined && error === undefined
           ? (
             <div className={css.skeleton} aria-label={t('loading')}>
@@ -509,6 +555,7 @@ export function SkillHubPanel(props: {
             const homeOpen = hideHomeChrome || needle !== '' || (expanded[homeKey] ?? true)
             const homeCounts = countSkills(home.children)
             const homeIds = collectSkillIds(home.children)
+            const homeHasOverride = layer !== 'global' && collectSkills(home.children).some(skill => skill.source === layer)
             const homeTotal = homeCounts.on + homeCounts.off
             const label = homeLabel(t, home.home)
             const tree = children.length === 0
@@ -528,6 +575,7 @@ export function SkillHubPanel(props: {
                   expanded={expanded}
                   setExpanded={setExpanded}
                   disabled={!layerReady || busy}
+                  layer={layer}
                   t={t}
                   onToggle={(kind, payload, on) => {
                     if (kind === 'group') {
@@ -538,6 +586,16 @@ export function SkillHubPanel(props: {
                       return
                     }
                     void mutate('/toggle', toggleBody({ kind, on, ...payload }))
+                  }}
+                  onInherit={(kind, payload) => {
+                    if (kind === 'group') {
+                      const ids = Array.isArray(payload['ids'])
+                        ? payload['ids'].filter((id): id is string => typeof id === 'string')
+                        : collectSkillIds([node])
+                      void inheritIds(ids)
+                      return
+                    }
+                    void mutate('/inherit', toggleBody({ kind, ...payload }))
                   }}
                 />
               ))
@@ -583,6 +641,19 @@ export function SkillHubPanel(props: {
                       {homeTotal > 1 ? <span className={css.badge}>{skillCountLabel(t, homeTotal)}</span> : null}
                     </span>
                   </button>
+                  {homeHasOverride
+                    ? (
+                      <button
+                        type="button"
+                        className={css.inherit}
+                        disabled={!layerReady || busy}
+                        aria-label={t('inherit.folder', { name: label })}
+                        onClick={() => void inheritIds(homeIds)}
+                      >
+                        {t('inherit.action')}
+                      </button>
+                    )
+                    : null}
                 </div>
                 <p className={css.homePath} title={home.path}>{home.path}</p>
                 {homeOpen ? tree : null}
@@ -604,8 +675,10 @@ function TreeNode(props: {
   expanded: Record<string, boolean>
   setExpanded: (next: Record<string, boolean> | ((current: Record<string, boolean>) => Record<string, boolean>)) => void
   disabled: boolean
+  layer: LayerName
   t: Copy
   onToggle: (kind: 'skill' | 'group', payload: Record<string, unknown>, on: boolean) => void
+  onInherit: (kind: 'skill' | 'group', payload: Record<string, unknown>) => void
 }) {
   const { node } = props
   const style = { '--depth': String(props.depth) } as CSSProperties
@@ -632,12 +705,15 @@ function TreeNode(props: {
           name: node.name,
           ...node.description !== undefined ? { description: node.description } : {},
           gate: node.gate,
+          source: node.source,
           collision: node.collision,
         }}
         label={node.name}
         disabled={props.disabled}
+        layer={props.layer}
         t={props.t}
         onToggle={props.onToggle}
+        onInherit={props.onInherit}
       />
     )
   }
@@ -650,8 +726,10 @@ function TreeNode(props: {
         skill={leaf}
         label={node.name}
         disabled={props.disabled}
+        layer={props.layer}
         t={props.t}
         onToggle={props.onToggle}
+        onInherit={props.onInherit}
       />
     )
   }
@@ -666,6 +744,7 @@ function TreeNode(props: {
   const counts = countSkills([node])
   const total = counts.on + counts.off
   const ids = collectSkillIds([node])
+  const hasOverride = props.layer !== 'global' && collectSkills([node]).some(skill => skill.source === props.layer)
   const defaultOpen = false
   const open = props.needle !== '' || (props.expanded[key] ?? defaultOpen)
   const visibleChildren = props.needle === ''
@@ -708,6 +787,19 @@ function TreeNode(props: {
             {total > 1 ? <span className={css.badge}>{skillCountLabel(props.t, total)}</span> : null}
           </span>
         </button>
+        {hasOverride
+          ? (
+            <button
+              type="button"
+              className={css.inherit}
+              disabled={props.disabled}
+              aria-label={props.t('inherit.folder', { name: node.name })}
+              onClick={() => props.onInherit('group', { packHome, packName, rel, ids })}
+            >
+              {props.t('inherit.action')}
+            </button>
+          )
+          : null}
       </div>
       {open
         ? (
@@ -719,8 +811,10 @@ function TreeNode(props: {
                   skill={node.skill}
                   label={node.skill.name}
                   disabled={props.disabled}
+                  layer={props.layer}
                   t={props.t}
                   onToggle={props.onToggle}
+                  onInherit={props.onInherit}
                 />
               )
               : null}
@@ -735,8 +829,10 @@ function TreeNode(props: {
                 expanded={props.expanded}
                 setExpanded={props.setExpanded}
                 disabled={props.disabled}
+                layer={props.layer}
                 t={props.t}
                 onToggle={props.onToggle}
+                onInherit={props.onInherit}
               />
             ))}
           </>
@@ -745,4 +841,3 @@ function TreeNode(props: {
     </div>
   )
 }
-

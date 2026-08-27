@@ -31,7 +31,7 @@ A folder in a Pack used as a batch toggle. It is not itself a Skill. Agent home 
 _Avoid_: category, namespace, 层级 (as the thing you toggle)
 
 **Visibility**:
-Which Skills DSH offers to the model catalog and the slash menu. Session wins, then Project, then Global. A new Session copies the resolved set at create. The settings UI picks which layer a toggle writes. Files stay on disk. Other agents keep seeing whatever they already read.
+Which Skills DSH offers to the model catalog and the slash menu. Chat overrides win, then Project overrides, then Global Defaults. Missing overrides inherit live from the parent. Settings edits Global Defaults; the composer panel edits Project or Chat. Files stay on disk. Other agents keep seeing whatever they already read.
 _Avoid_: moving folders to `skills.disabled`, enable-on-disk, 可见性 as UI-only hide
 
 **Off**:
@@ -43,16 +43,16 @@ Removing a Skill or Pack from a home, only after the user agrees. It is not Off.
 _Avoid_: 关, disable
 
 **Global**:
-The harness-wide default Visibility.
+The harness-wide default Visibility, edited only in Settings. Its default also applies to Skills added later.
 _Avoid_: Agent home (a directory, not a layer)
 
 **Project**:
-User-local Visibility for one workspace folder. It follows the user, not the git repo.
+User-local overrides for one workspace folder, edited from the composer panel. Missing entries follow Global Defaults. It follows the user, not the git repo.
 _Avoid_: 对话, Pack, a file committed in the repo
 
 **Session**:
-One DSH session. At create it copies resolved Global and Project Visibility. After that it is independent. Its toggles beat Project and Global.
-_Avoid_: 对话, 单轮, conversation, thread, turn
+One DSH session. Its Chat overrides beat Project and Global, while missing entries keep following their parent. Legacy snapshots remain explicit until reset.
+_Avoid_: 单轮, turn
 
 **Collision**:
 Two installed Skills that share the same name. SkillHub shows both and warns. The user decides what to Off or Delete. SkillHub does not rename, hide, or block them.

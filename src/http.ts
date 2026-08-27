@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { AGENT_HOME_DELETE_WARNING } from './catalog.ts'
 import type { Catalog, HomeKind, SkillId } from './catalog.ts'
-import type { LayerName, SkillHub, ToggleTarget } from './hub.ts'
+import type { LayerName, SkillHub, ToggleTarget, VisibilityTarget } from './hub.ts'
 
 const PREFIX = '/skillhub'
 
@@ -15,6 +15,8 @@ function clientCatalog(catalog: Catalog) {
     tree: catalog.tree,
     collisions: catalog.collisions,
     broken: catalog.broken,
+    layer: catalog.layer,
+    legacySessionSnapshot: catalog.legacySessionSnapshot === true,
     agentHomeDeleteWarning: AGENT_HOME_DELETE_WARNING,
   }
 }
@@ -56,18 +58,17 @@ function isSkillIdList(value: unknown): value is SkillId[] {
   return Array.isArray(value) && value.every(id => typeof id === 'string' && id !== '')
 }
 
-function toggleTarget(body: Record<string, unknown>): ToggleTarget {
+function visibilityTarget(body: Record<string, unknown>): VisibilityTarget {
   const kind = body['kind']
-  const on = body['on'] === true
-  if (kind === 'all') return { kind: 'all', on }
+  if (kind === 'all') return { kind: 'all' }
   if (kind === 'skill' && typeof body['id'] === 'string') {
-    return { kind: 'skill', id: body['id'] as SkillId, on }
+    return { kind: 'skill', id: body['id'] as SkillId }
   }
   if (kind === 'ids' && isSkillIdList(body['ids'])) {
-    return { kind: 'ids', ids: body['ids'], on }
+    return { kind: 'ids', ids: body['ids'] }
   }
   if (kind === 'home' && (body['home'] === 'agent' || body['home'] === 'dsh')) {
-    return { kind: 'home', home: body['home'], on }
+    return { kind: 'home', home: body['home'] }
   }
   if (
     kind === 'group'
@@ -80,10 +81,14 @@ function toggleTarget(body: Record<string, unknown>): ToggleTarget {
       packHome: body['packHome'],
       packName: body['packName'],
       rel: body['rel'],
-      on,
     }
   }
-  throw new Error('invalid toggle target')
+  throw new Error('invalid visibility target')
+}
+
+function toggleTarget(body: Record<string, unknown>): ToggleTarget {
+  if (typeof body['on'] !== 'boolean') throw new Error('on must be boolean')
+  return { ...visibilityTarget(body), on: body['on'] }
 }
 
 export function handleSkillHubHttp(hub: SkillHub, invalidate: () => void) {
@@ -120,6 +125,25 @@ export function handleSkillHubHttp(hub: SkillHub, invalidate: () => void) {
         send(res, 200, clientCatalog(catalog))
         return
       }
+      if (path === '/inherit') {
+        const layer = body['layer']
+        if (layer !== 'global' && layer !== 'project' && layer !== 'session') {
+          send(res, 400, { error: 'invalid layer' })
+          return
+        }
+        const request: {
+          layer: LayerName
+          sessionId?: string
+          folder?: string
+          target: VisibilityTarget
+        } = { layer, target: visibilityTarget(body) }
+        if (typeof body['sessionId'] === 'string') request.sessionId = body['sessionId']
+        if (typeof body['folder'] === 'string') request.folder = body['folder']
+        const catalog = hub.inherit(request)
+        invalidate()
+        send(res, 200, clientCatalog(catalog))
+        return
+      }
       if (path === '/reset') {
         if (typeof body['sessionId'] !== 'string') {
           send(res, 400, { error: 'sessionId required' })
@@ -129,16 +153,6 @@ export function handleSkillHubHttp(hub: SkillHub, invalidate: () => void) {
           body['sessionId'],
           typeof body['folder'] === 'string' ? body['folder'] : undefined,
         )
-        invalidate()
-        send(res, 200, clientCatalog(catalog))
-        return
-      }
-      if (path === '/promote') {
-        if (typeof body['sessionId'] !== 'string' || typeof body['folder'] !== 'string') {
-          send(res, 400, { error: 'sessionId and folder required' })
-          return
-        }
-        const catalog = hub.promoteSession(body['sessionId'], body['folder'])
         invalidate()
         send(res, 200, clientCatalog(catalog))
         return
