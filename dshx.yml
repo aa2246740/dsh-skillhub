@@ -1,0 +1,5 @@
+id: dsh-skillhub
+entry: src/dsh-skillhub.ts
+marker: "[my-plugins/dsh-skillhub] loaded"
+kind: client
+profile: web

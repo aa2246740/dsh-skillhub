@@ -1,0 +1,40 @@
+{
+  "extends": "../../tsconfig.base.client.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "types": ["client-build-environment", "node"]
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../vendor/cordis"
+    },
+    {
+      "path": "../../vendor/schemastery"
+    },
+    {
+      "path": "../../packages/settings/settings"
+    },
+    {
+      "path": "../../packages/skill/skill"
+    },
+    {
+      "path": "../../packages/host/webserver"
+    },
+    {
+      "path": "../../packages/client/runtime"
+    },
+    {
+      "path": "../../packages/client/ui-conversation"
+    },
+    {
+      "path": "../../packages/client/ui-primitives"
+    },
+    {
+      "path": "../../packages/client/ui-settings-general"
+    }
+  ]
+}
