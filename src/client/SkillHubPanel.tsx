@@ -61,7 +61,9 @@ function brokenCopy(t: Copy, reason: { kind: string; target?: string; message?: 
 }
 
 function homeLabel(t: Copy, home: HomeKind): string {
-  return home === 'agent' ? t('home.agent') : t('home.dsh')
+  if (home === 'agent') return t('home.agent')
+  if (home === 'host') return t('home.host')
+  return t('home.dsh')
 }
 
 function countSkills(nodes: readonly (CatalogNode | GroupChild)[]): { on: number; off: number } {

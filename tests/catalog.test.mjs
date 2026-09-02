@@ -140,6 +140,52 @@ test('keeps a pack whose SKILL.md name is not kebab-case', async () => {
   assert.equal(catalog.broken.some(entry => entry.path.includes('pstack-poteto-mode')), false)
 })
 
+test('global sparse off does not offer a skill that appears later', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skillhub-'))
+  const agent = join(root, 'agent')
+  const dsh = join(root, 'dsh')
+  await skillFile(join(agent, 'tdd'), 'tdd')
+  await mkdir(dsh, { recursive: true })
+  const tddId = skillId('agent', 'tdd/SKILL.md')
+  await skillFile(join(agent, 'write-natural-chinese'), 'write-natural-chinese')
+  const catalog = resolveCatalog({
+    agentHome: agent,
+    dshHome: dsh,
+    global: { version: 2, default: 'on', gates: { [tddId]: 'off' } },
+  })
+  assert.deepEqual(catalog.offered.map(skill => skill.name), [])
+  const chinese = catalog.inventory.find(skill => skill.name === 'write-natural-chinese')
+  assert.equal(chinese.gate, 'off')
+  assert.equal(chinese.invocation.modelInvocable, false)
+})
+
+test('host plugin skills follow the same sparse-off rule and occupy the name', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skillhub-'))
+  const agent = join(root, 'agent')
+  const dsh = join(root, 'dsh')
+  await skillFile(join(agent, 'tdd'), 'tdd')
+  await mkdir(dsh, { recursive: true })
+  const tddId = skillId('agent', 'tdd/SKILL.md')
+  const catalog = resolveCatalog({
+    agentHome: agent,
+    dshHome: dsh,
+    global: { version: 2, default: 'on', gates: { [tddId]: 'off' } },
+    hostSkills: [{
+      name: 'unslop',
+      description: 'Cut AI tells',
+      provider: 'pstack-dsh',
+      path: join(root, 'pstack', 'unslop', 'SKILL.md'),
+      directory: join(root, 'pstack', 'unslop'),
+    }],
+  })
+  assert.equal(catalog.offered.some(skill => skill.name === 'unslop'), false)
+  const host = catalog.inventory.find(skill => skill.name === 'unslop')
+  assert.equal(host.home, 'host')
+  assert.equal(host.gate, 'off')
+  assert.equal(host.invocation.modelInvocable, false)
+  assert.ok(catalog.tree.some(home => home.home === 'host'))
+})
+
 test('prunes folders that do not contain a SKILL.md', async () => {
   const root = await mkdtemp(join(tmpdir(), 'skillhub-'))
   const agent = join(root, 'agent')

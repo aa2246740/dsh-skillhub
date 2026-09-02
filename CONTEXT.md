@@ -31,7 +31,7 @@ A folder in a Pack used as a batch toggle. It is not itself a Skill. Agent home 
 _Avoid_: category, namespace, 层级 (as the thing you toggle)
 
 **Visibility**:
-Which Skills DSH offers to the model catalog and the slash menu. Chat overrides win, then Project overrides, then Global Defaults. Missing overrides inherit live from the parent. Settings edits Global Defaults; the composer panel edits Project or Chat. Files stay on disk. Other agents keep seeing whatever they already read.
+Which Skills DSH offers to the model catalog and the slash menu. Chat overrides win, then Project overrides, then Global Defaults. Missing overrides inherit live from the parent. Settings edits Global Defaults; the composer panel edits Project or Chat. Files stay on disk. Other agents keep seeing whatever they already read. After any Global Off, a skill with no gate stays Off, including host plugin skills. All on is the only state that auto-enables skills added later.
 _Avoid_: moving folders to `skills.disabled`, enable-on-disk, 可见性 as UI-only hide
 
 **Off**:
