@@ -110,6 +110,23 @@ test('ids toggle turns off listed skills only', async () => {
   assert.deepEqual(after.offered.map(skill => skill.name), ['essays'])
 })
 
+test('a pack added after a sparse global off stays off', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skillhub-hub-'))
+  const agent = join(root, 'agent')
+  const dsh = join(root, 'dsh')
+  await skillFile(join(agent, 'tdd'), 'tdd')
+  await mkdir(dsh, { recursive: true })
+  const hub = new SkillHub({ agentHome: agent, dshHome: dsh, storeDir: join(root, 'store') })
+  hub.toggle({
+    layer: 'global',
+    target: { kind: 'skill', id: skillId('agent', 'tdd/SKILL.md'), on: false },
+  })
+  await skillFile(join(agent, 'write-natural-chinese'), 'write-natural-chinese')
+  const later = hub.catalog()
+  assert.equal(later.offered.some(skill => skill.name === 'write-natural-chinese'), false)
+  assert.equal(later.inventory.find(skill => skill.name === 'write-natural-chinese').gate, 'off')
+})
+
 test('home toggle turns off every skill in that home', async () => {
   const root = await mkdtemp(join(tmpdir(), 'skillhub-hub-'))
   const agent = join(root, 'agent')
@@ -257,12 +274,13 @@ test('a legacy Chat snapshot stays explicit until the user restores inheritance'
   assert.deepEqual(session.offered.map(skill => skill.name).sort(), ['ask-matt', 'later'])
   session = hub.resetSession(sessionId, folder)
   assert.equal(session.legacySessionSnapshot, undefined)
-  assert.deepEqual(session.offered.map(skill => skill.name), ['later'])
+  assert.deepEqual(session.offered.map(skill => skill.name), [])
   assert.equal(session.inventory.find(skill => skill.id === id).source, 'global')
   assert.equal(session.inventory.find(skill => skill.name === 'later').source, 'global')
+  assert.equal(session.inventory.find(skill => skill.name === 'later').gate, 'off')
 })
 
-test('a sparse legacy Global document does not turn unrelated Skills off', async () => {
+test('a sparse Global document turns unlisted Skills off', async () => {
   const root = await mkdtemp(join(tmpdir(), 'skillhub-hub-'))
   const agent = join(root, 'agent')
   const dsh = join(root, 'dsh')
@@ -275,7 +293,8 @@ test('a sparse legacy Global document does not turn unrelated Skills off', async
   await writeFile(join(store, 'global.json'), JSON.stringify({ gates: { [off]: 'off' } }))
   const hub = new SkillHub({ agentHome: agent, dshHome: dsh, storeDir: store })
   const global = hub.catalog({ layer: 'global' })
-  assert.deepEqual(global.offered.map(skill => skill.name), ['untouched'])
+  assert.deepEqual(global.offered.map(skill => skill.name), [])
+  assert.equal(global.inventory.find(skill => skill.name === 'untouched').gate, 'off')
 })
 
 test('invalid scope requests fail instead of writing another layer', async () => {

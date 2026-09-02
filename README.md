@@ -2,7 +2,7 @@
 
 SkillHub is a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web plugin that lists Skills already on disk in Agent home (`~/.agents/skills`) and DSH home (`~/.dsh/skills`). Settings owns Global Defaults; the composer panel owns Project and Chat overrides.
 
-It does not install, copy, or delete skill files. Off leaves the folder in place. Host/plugin skills are out of scope.
+It does not install, copy, or delete skill files. Off leaves the folder in place. Host plugin skills appear under Host plugins. Off occupies their catalog name so they cannot refill `<available_skills>`.
 
 Vocabulary: [`CONTEXT.md`](CONTEXT.md). Decisions: [`docs/adr/`](docs/adr/).
 

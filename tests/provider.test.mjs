@@ -35,6 +35,31 @@ test('off skills stay listed as not invocable so another provider cannot refill 
   assert.equal(listed[0].provider, 'skillhub')
 })
 
+test('off host plugin skills stay listed so they occupy the catalog name', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skillhub-provider-'))
+  const agent = join(root, 'agent')
+  const dsh = join(root, 'dsh')
+  await skillFile(join(agent, 'tdd'), 'tdd')
+  await mkdir(dsh, { recursive: true })
+  const hub = new SkillHub({ agentHome: agent, dshHome: dsh, storeDir: join(root, 'store') })
+  hub.noteHostSkills([{
+    name: 'unslop',
+    description: 'Cut AI tells',
+    provider: 'pstack-dsh',
+    path: join(root, 'unslop', 'SKILL.md'),
+    directory: join(root, 'unslop'),
+  }])
+  hub.toggle({
+    layer: 'global',
+    target: { kind: 'skill', id: skillId('agent', 'tdd/SKILL.md'), on: false },
+  })
+  const provider = createSkillHubProvider(hub)
+  const listed = await provider.list({ cwd: root })
+  const unslop = listed.find(skill => skill.name === 'unslop')
+  assert.equal(unslop.invocation.modelInvocable, false)
+  assert.equal(unslop.provider, 'skillhub')
+})
+
 test('an on sibling wins the name when the other home is off', async () => {
   const root = await mkdtemp(join(tmpdir(), 'skillhub-provider-'))
   const agent = join(root, 'agent')

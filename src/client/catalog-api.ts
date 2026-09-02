@@ -1,6 +1,6 @@
 export type LayerName = 'global' | 'project' | 'session'
 export type GateSource = LayerName
-export type HomeKind = 'agent' | 'dsh'
+export type HomeKind = 'agent' | 'dsh' | 'host'
 export type Gate = 'on' | 'off'
 export type GroupGate = 'on' | 'off' | 'mixed'
 

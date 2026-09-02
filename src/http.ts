@@ -67,7 +67,7 @@ function visibilityTarget(body: Record<string, unknown>): VisibilityTarget {
   if (kind === 'ids' && isSkillIdList(body['ids'])) {
     return { kind: 'ids', ids: body['ids'] }
   }
-  if (kind === 'home' && (body['home'] === 'agent' || body['home'] === 'dsh')) {
+  if (kind === 'home' && (body['home'] === 'agent' || body['home'] === 'dsh' || body['home'] === 'host')) {
     return { kind: 'home', home: body['home'] }
   }
   if (
@@ -91,13 +91,18 @@ function toggleTarget(body: Record<string, unknown>): ToggleTarget {
   return { ...visibilityTarget(body), on: body['on'] }
 }
 
-export function handleSkillHubHttp(hub: SkillHub, invalidate: () => void) {
+export function handleSkillHubHttp(
+  hub: SkillHub,
+  invalidate: () => void,
+  snapshotHost?: () => Promise<void>,
+) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     try {
       const host = req.headers.host ?? '127.0.0.1'
       const url = new URL(req.url ?? '/', `http://${host}`)
       const path = url.pathname.slice(PREFIX.length) || '/'
       if (req.method === 'GET' && (path === '/catalog' || path === '/')) {
+        if (snapshotHost !== undefined) await snapshotHost()
         send(res, 200, clientCatalog(hub.catalog(query(url))))
         return
       }
