@@ -4,10 +4,11 @@ import {
   IconSkillOutline16,
   useAnchoredPosition,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-general/client'
 import { SkillHubPanel } from './SkillHubPanel.tsx'
 import { en, zh, type SkillHubKey } from './locales.ts'

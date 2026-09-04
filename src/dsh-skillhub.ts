@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 import type { SkillProviderControl } from '@deepseek-ai/dsh-skill'
 import z from '@deepseek-ai/schemastery'
 import type { HostSkillNote } from './catalog.ts'
@@ -13,7 +13,7 @@ import { createSkillHubProvider } from './provider.ts'
 export const name = 'dsh-skillhub'
 export const inject = ['skills', 'webServer']
 
-const NS = settingsNamespace('dsh-skillhub')
+const NS = 'dsh-skillhub'
 
 export interface Config {
   enabled?: boolean
@@ -43,9 +43,11 @@ function defaultStoreDir(): string {
 export function apply(ctx: Context, config: Config) {
   console.log('[my-plugins/dsh-skillhub] loaded')
   let source = () => config
-  installSettingsSection(ctx, NS, Config, config, {
-    setSource: current => { source = current },
-    onChange: () => { void source() },
+  ctx.inject(['settings'], settingsCtx => {
+    settingsCtx.settings.installSection(ctx, NS, Config, config, {
+      setSource: current => { source = current },
+      onChange: () => { void source() },
+    })
   })
   const hub = new SkillHub({
     agentHome: defaultAgentHome(),
