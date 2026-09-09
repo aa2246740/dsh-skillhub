@@ -42,6 +42,10 @@ export function McpPanel(props: McpPanelProps) {
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
   const generation = useRef(0)
+  const tRef = useRef(t)
+  tRef.current = t
+  const onCountRef = useRef(props.onServerCountChange)
+  onCountRef.current = props.onServerCountChange
 
   const query = {
     layer,
@@ -51,30 +55,32 @@ export function McpPanel(props: McpPanelProps) {
   const key = JSON.stringify(query)
 
   const request = useCallback(async (path: string, body?: object, signal?: AbortSignal) => {
+    const copy = tRef.current
     const response = await fetch(`/skillhub/mcp/${path}`, body === undefined
       ? { ...(signal ? { signal } : {}) }
       : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
     if (!response.headers.get('content-type')?.includes('application/json')) {
-      throw new Error(t('mcp.unavailable'))
+      throw new Error(copy('mcp.unavailable'))
     }
     const data = await response.json() as Catalog & { error?: string }
     if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`)
-    if (!Array.isArray(data.servers)) throw new Error(t('mcp.unavailable'))
+    if (!Array.isArray(data.servers)) throw new Error(copy('mcp.unavailable'))
     return data
-  }, [t])
+  }, [])
 
-  const load = useCallback(() => {
+  const applyCatalog = (data: Catalog) => {
+    setCatalog(data)
+    onCountRef.current?.(data.servers.length)
+  }
+
+  const load = useCallback((clear: boolean) => {
     const current = ++generation.current
     const controller = new AbortController()
-    setCatalog(undefined)
+    if (clear) setCatalog(undefined)
     setError(undefined)
-    setBusy(false)
     void request(`catalog?${new URLSearchParams(JSON.parse(key) as Record<string, string>)}`, undefined, controller.signal)
       .then(data => {
-        if (current === generation.current) {
-          setCatalog(data)
-          props.onServerCountChange?.(data.servers.length)
-        }
+        if (current === generation.current) applyCatalog(data)
       })
       .catch((caught: Error) => {
         if (!controller.signal.aborted && current === generation.current) {
@@ -85,11 +91,13 @@ export function McpPanel(props: McpPanelProps) {
       ++generation.current
       controller.abort()
     }
-  }, [key, request, props])
+  }, [key, request])
 
   useEffect(() => {
-    return load()
-  }, [load])
+    return load(catalog === undefined)
+    // Reload only when the query key changes, not on every parent render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- catalog is the first-paint gate, not a fetch input
+  }, [key, load])
 
   const update = async (server: string, on?: boolean) => {
     const current = generation.current
@@ -100,10 +108,7 @@ export function McpPanel(props: McpPanelProps) {
         on === undefined ? 'inherit' : 'toggle',
         { ...query, server, ...(on === undefined ? {} : { on }) },
       )
-      if (current === generation.current) {
-        setCatalog(data)
-        props.onServerCountChange?.(data.servers.length)
-      }
+      if (current === generation.current) applyCatalog(data)
     } catch (caught) {
       if (current === generation.current) setError(String(caught))
     } finally {
@@ -124,10 +129,7 @@ export function McpPanel(props: McpPanelProps) {
           { ...query, server: server.name, ...(on === undefined ? {} : { on }) },
         )
       }
-      if (latest && current === generation.current) {
-        setCatalog(latest)
-        props.onServerCountChange?.(latest.servers.length)
-      }
+      if (latest && current === generation.current) applyCatalog(latest)
     } catch (caught) {
       if (current === generation.current) setError(String(caught))
     } finally {
@@ -195,9 +197,7 @@ export function McpPanel(props: McpPanelProps) {
         {error !== undefined ? (
           <div className={css.bannerRow}>
             <p className={css.error} role="alert">{error}</p>
-            <Button variant="outline" size="sm" onClick={() => void load()}>
-              {t('error.retry')}
-            </Button>
+            <Button variant="outline" size="sm" onClick={() => void load(false)}>{t('error.retry')}</Button>
           </div>
         ) : null}
 
