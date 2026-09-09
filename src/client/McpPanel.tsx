@@ -9,7 +9,6 @@ import type { SkillHubKey } from './locales.ts'
 import {
   GateSwitch,
   gateWord,
-  layerLabel,
   sourceLabel,
   type SkillHubSurface,
 } from './SkillHubPanel.tsx'
@@ -25,22 +24,14 @@ type Catalog = {
   }[]
 }
 
-function mcpLayerHelp(t: Translate<SkillHubKey>, layer: LayerName): string {
-  if (layer === 'session') return t('mcp.help.session')
-  if (layer === 'project') return t('mcp.help.project')
-  return t('mcp.help.global')
-}
-
 export interface McpPanelProps {
   surface: SkillHubSurface
   layer: LayerName
-  layers: readonly LayerName[]
   sessionId?: string | undefined
   folder?: string | undefined
   canWriteSession: boolean
   canWriteProject: boolean
   layerReady: boolean
-  onLayerChange: (layer: LayerName) => void
   onServerCountChange?: ((count: number) => void) | undefined
   t: Translate<SkillHubKey>
 }
@@ -120,9 +111,34 @@ export function McpPanel(props: McpPanelProps) {
     }
   }
 
+  const bulkUpdate = async (on?: boolean) => {
+    if (!catalog?.servers) return
+    const current = generation.current
+    setBusy(true)
+    setError(undefined)
+    try {
+      let latest: Catalog | undefined
+      for (const server of catalog.servers) {
+        latest = await request(
+          on === undefined ? 'inherit' : 'toggle',
+          { ...query, server: server.name, ...(on === undefined ? {} : { on }) },
+        )
+      }
+      if (latest && current === generation.current) {
+        setCatalog(latest)
+        props.onServerCountChange?.(latest.servers.length)
+      }
+    } catch (caught) {
+      if (current === generation.current) setError(String(caught))
+    } finally {
+      if (current === generation.current) setBusy(false)
+    }
+  }
+
   const servers = catalog?.servers ?? []
   const onCount = servers.filter(s => s.gate === 'on').length
   const offCount = servers.filter(s => s.gate === 'off').length
+  const hasOverrides = layer !== 'global' && servers.some(s => s.source === layer)
 
   return (
     <div className={css.mcpContainer} data-ud-check="skillhub-mcp-container">
@@ -136,6 +152,36 @@ export function McpPanel(props: McpPanelProps) {
               {t(props.surface === 'page' ? 'mcp.lede.global' : 'mcp.lede.context')}
             </p>
           </div>
+          {servers.length > 0 ? (
+            <div className={css.headerActions}>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!layerReady || busy}
+                onClick={() => void bulkUpdate(false)}
+              >
+                {t('allOff')}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!layerReady || busy}
+                onClick={() => void bulkUpdate(true)}
+              >
+                {t('allOn')}
+              </Button>
+              {hasOverrides ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={!layerReady || busy}
+                  onClick={() => void bulkUpdate(undefined)}
+                >
+                  {t('allInherit')}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
         {servers.length > 0 ? (
           <div className={css.counts} aria-live="polite">
@@ -144,43 +190,6 @@ export function McpPanel(props: McpPanelProps) {
           </div>
         ) : null}
       </header>
-
-      <div className={css.layer} data-ud-check="skillhub-mcp-layer">
-        {props.layers.length === 1 ? (
-          <div className={css.scope}>{layerLabel(t, layer)}</div>
-        ) : (
-          <div className={css.segment} role="radiogroup" aria-label={t('layer.aria')}>
-            {props.layers.map(name => {
-              const disabled = (name === 'session' && !props.canWriteSession)
-                || (name === 'project' && !props.canWriteProject)
-              return (
-                <button
-                  key={name}
-                  type="button"
-                  role="radio"
-                  aria-checked={layer === name}
-                  data-active={layer === name ? '' : undefined}
-                  disabled={disabled}
-                  {...(name === 'session' && !props.canWriteSession
-                    ? { title: t('session.needsChat') }
-                    : name === 'project' && !props.canWriteProject
-                      ? { title: t('project.needsWorkspace') }
-                      : {})}
-                  onClick={() => props.onLayerChange(name)}
-                >
-                  {layerLabel(t, name)}
-                </button>
-              )
-            })}
-          </div>
-        )}
-        <p className={css.helper} id="skillhub-mcp-layer-help">
-          {mcpLayerHelp(t, layer)}
-        </p>
-        {layer === 'project' && folder !== undefined && folder !== '' ? (
-          <p className={css.path} title={folder}>{folder}</p>
-        ) : null}
-      </div>
 
       <div className={css.body} data-ud-check="skillhub-mcp-body">
         {error !== undefined ? (
@@ -206,7 +215,6 @@ export function McpPanel(props: McpPanelProps) {
             </div>
             <h3 className={css.emptyTitle}>{t('mcp.empty.title')}</h3>
             <p className={css.emptyDesc}>{t('mcp.empty.desc')}</p>
-            <p className={css.emptyNote}>{t('mcp.empty.note')}</p>
           </div>
         ) : null}
 
@@ -231,7 +239,7 @@ export function McpPanel(props: McpPanelProps) {
                 <div className={css.name}>
                   <span className={css.nameText}>{server.name}</span>
                   <span className={css.badge}>{t('mcp.tools', { n: server.tools })}</span>
-                  {layer !== 'global' ? (
+                  {layer !== 'global' && server.source === layer ? (
                     <span className={css.source}>{sourceLabel(t, server.source)}</span>
                   ) : null}
                   {!server.supported ? (

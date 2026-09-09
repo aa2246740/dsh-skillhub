@@ -309,7 +309,9 @@ function SkillLeaf(props: {
         </button>
         {copied ? <span className={css.source}>{props.t('copy.done')}</span> : null}
         {skill.collision ? <span className={css.collision}>{props.t('badge.collision')}</span> : null}
-        {props.layer === 'global' ? null : <span className={css.source}>{sourceLabel(props.t, skill.source)}</span>}
+        {props.layer !== 'global' && skill.source === props.layer
+          ? <span className={css.source}>{sourceLabel(props.t, skill.source)}</span>
+          : null}
       </div>
       {props.layer !== 'global' && skill.source === props.layer
         ? (
@@ -484,19 +486,43 @@ export function SkillHubPanel(props: {
             ) : null}
           </button>
         </div>
+
+        {props.layers.length > 1 ? (
+          <div className={css.segment} role="radiogroup" aria-label={t('layer.aria')}>
+            {props.layers.map(name => {
+              const disabled = (name === 'session' && !canWriteSession) || (name === 'project' && !canWriteProject)
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  role="radio"
+                  aria-checked={layer === name}
+                  data-active={layer === name ? '' : undefined}
+                  disabled={disabled}
+                  {...(name === 'session' && !canWriteSession
+                    ? { title: t('session.needsChat') }
+                    : name === 'project' && !canWriteProject
+                      ? { title: t('project.needsWorkspace') }
+                      : {})}
+                  onClick={() => setLayer(name)}
+                >
+                  {layerLabel(t, name)}
+                </button>
+              )
+            })}
+          </div>
+        ) : null}
       </div>
 
       {tab === 'mcp' ? (
         <McpPanel
           surface={props.surface}
           layer={layer}
-          layers={props.layers}
           sessionId={sessionId}
           folder={folder}
           canWriteSession={canWriteSession}
           canWriteProject={canWriteProject}
           layerReady={layerReady}
-          onLayerChange={setLayer}
           onServerCountChange={setMcpServerCount}
           t={t}
         />
@@ -525,18 +551,16 @@ export function SkillHubPanel(props: {
                 >
                   {t('allOn')}
                 </Button>
-                {layer === 'global'
-                  ? null
-                  : (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={!layerReady || busy || catalog === undefined}
-                      onClick={() => void mutate('/inherit', toggleBody({ kind: 'all' }))}
-                    >
-                      {t('allInherit')}
-                    </Button>
-                  )}
+                {layer !== 'global' && catalog !== undefined && collectSkills(catalog.tree.flatMap(h => h.children)).some(s => s.source === layer) ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={!layerReady || busy || catalog === undefined}
+                    onClick={() => void mutate('/inherit', toggleBody({ kind: 'all' }))}
+                  >
+                    {t('allInherit')}
+                  </Button>
+                ) : null}
               </div>
             </div>
             {catalog !== undefined
@@ -551,40 +575,6 @@ export function SkillHubPanel(props: {
               )
               : null}
           </header>
-
-          <div className={css.layer} data-ud-check="skillhub-layer">
-            {props.layers.length === 1
-              ? <div className={css.scope}>{layerLabel(t, layer)}</div>
-              : (
-                <div className={css.segment} role="radiogroup" aria-label={t('layer.aria')}>
-                  {props.layers.map(name => {
-                const disabled = (name === 'session' && !canWriteSession) || (name === 'project' && !canWriteProject)
-                return (
-                  <button
-                    key={name}
-                    type="button"
-                    role="radio"
-                    aria-checked={layer === name}
-                    data-active={layer === name ? '' : undefined}
-                    disabled={disabled}
-                    {...((name === 'session' && !canWriteSession)
-                      ? { title: t('session.needsChat') }
-                      : (name === 'project' && !canWriteProject)
-                        ? { title: t('project.needsWorkspace') }
-                        : {})}
-                    onClick={() => setLayer(name)}
-                  >
-                    {layerLabel(t, name)}
-                  </button>
-                )
-                  })}
-                </div>
-              )}
-            <p className={css.helper} id="skillhub-layer-help">{layerHelp(t, layer)}</p>
-            {layer === 'project' && folder !== ''
-              ? <p className={css.path} title={folder}>{folder}</p>
-              : null}
-          </div>
 
           <label className={css.search}>
             <span className={css.helper}>{t('search')}</span>
@@ -758,7 +748,6 @@ export function SkillHubPanel(props: {
                     )
                     : null}
                 </div>
-                <p className={css.homePath} title={home.path}>{home.path}</p>
                 {homeOpen ? tree : null}
               </section>
             )
