@@ -1,5 +1,5 @@
+import type { installMcpVisibility } from './mcp-runtime.ts'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { AGENT_HOME_DELETE_WARNING } from './catalog.ts'
 import type { Catalog, HomeKind, SkillId } from './catalog.ts'
 import type { LayerName, SkillHub, ToggleTarget, VisibilityTarget } from './hub.ts'
 
@@ -17,7 +17,6 @@ function clientCatalog(catalog: Catalog) {
     broken: catalog.broken,
     layer: catalog.layer,
     legacySessionSnapshot: catalog.legacySessionSnapshot === true,
-    agentHomeDeleteWarning: AGENT_HOME_DELETE_WARNING,
   }
 }
 
@@ -67,7 +66,7 @@ function visibilityTarget(body: Record<string, unknown>): VisibilityTarget {
   if (kind === 'ids' && isSkillIdList(body['ids'])) {
     return { kind: 'ids', ids: body['ids'] }
   }
-  if (kind === 'home' && (body['home'] === 'agent' || body['home'] === 'dsh' || body['home'] === 'host')) {
+  if (kind === 'home' && (body['home'] === 'agent' || body['home'] === 'dsh')) {
     return { kind: 'home', home: body['home'] }
   }
   if (
@@ -94,15 +93,29 @@ function toggleTarget(body: Record<string, unknown>): ToggleTarget {
 export function handleSkillHubHttp(
   hub: SkillHub,
   invalidate: () => void,
-  snapshotHost?: () => Promise<void>,
+  requestRejection?: (req: IncomingMessage) => 401 | 403 | undefined,
+  mcp?: ReturnType<typeof installMcpVisibility>,
 ) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     try {
       const host = req.headers.host ?? '127.0.0.1'
       const url = new URL(req.url ?? '/', `http://${host}`)
       const path = url.pathname.slice(PREFIX.length) || '/'
+      if (requestRejection === undefined) {
+        send(res, 503, { error: 'Host authentication unavailable' })
+        return
+      }
+      const rejection = requestRejection(req)
+      if (rejection !== undefined) {
+        send(res, rejection, { error: rejection === 401 ? 'unauthorized' : 'forbidden' })
+        return
+      }
+      if (req.method === 'GET' && path === '/mcp/catalog') {
+        if (!mcp) { send(res, 503, { error: 'MCP visibility unavailable' }); return }
+        send(res, 200, mcp.catalog(query(url)))
+        return
+      }
       if (req.method === 'GET' && (path === '/catalog' || path === '/')) {
-        if (snapshotHost !== undefined) await snapshotHost()
         send(res, 200, clientCatalog(hub.catalog(query(url))))
         return
       }
@@ -111,6 +124,17 @@ export function handleSkillHubHttp(
         return
       }
       const body = await readJson(req)
+      if (path === '/mcp/toggle' || path === '/mcp/inherit') {
+        if (!mcp) throw new Error('MCP visibility unavailable')
+        const layer = body['layer']
+        if (layer !== 'global' && layer !== 'project' && layer !== 'session') throw new Error('invalid MCP layer')
+        if (typeof body['server'] !== 'string') throw new Error('server required')
+        if (path === '/mcp/toggle' && typeof body['on'] !== 'boolean') throw new Error('on must be boolean')
+        for (const key of ['folder', 'sessionId']) if (body[key] !== undefined && typeof body[key] !== 'string') throw new Error(`invalid ${key}`)
+        const q: import('./mcp.ts').McpCatalogQuery = { layer, ...(typeof body['folder'] === 'string' ? { folder: body['folder'] } : {}), ...(typeof body['sessionId'] === 'string' ? { sessionId: body['sessionId'] } : {}) }
+        send(res, 200, mcp.mutate(q, body['server'], path === '/mcp/toggle' ? body['on'] as boolean : undefined))
+        return
+      }
       if (path === '/toggle') {
         const layer = body['layer']
         if (layer !== 'global' && layer !== 'project' && layer !== 'session') {
@@ -170,20 +194,6 @@ export function handleSkillHubHttp(
         const catalog = hub.install(body['sourceDir'], body['home'] as HomeKind)
         invalidate()
         send(res, 200, clientCatalog(catalog))
-        return
-      }
-      if (path === '/delete') {
-        if ((body['home'] !== 'agent' && body['home'] !== 'dsh') || typeof body['name'] !== 'string') {
-          send(res, 400, { error: 'home and name required' })
-          return
-        }
-        const result = hub.deletePack(
-          body['home'],
-          body['name'],
-          typeof body['confirmPath'] === 'string' ? body['confirmPath'] : undefined,
-        )
-        invalidate()
-        send(res, 200, { ...result, catalog: clientCatalog(result.catalog) })
         return
       }
       send(res, 404, { error: 'not found' })

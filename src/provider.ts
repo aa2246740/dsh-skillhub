@@ -7,7 +7,6 @@ import type { SkillHub } from './hub.ts'
 const PROVIDER = 'skillhub'
 const USER_DSH_RANK = 350
 const USER_AGENTS_RANK = 351
-const HOST_OCCUPY_RANK = 340
 
 export function sessionIdFromScope(scope: unknown): string | undefined {
   if (typeof scope !== 'object' || scope === null) return undefined
@@ -18,12 +17,8 @@ export function sessionIdFromScope(scope: unknown): string | undefined {
 }
 
 function toCandidate(skill: ManagedSkill): SkillCandidate {
-  const source = skill.home === 'dsh' ? 'user-dsh' : skill.home === 'host' ? 'bundled' : 'user-agents'
-  const rank = skill.home === 'dsh'
-    ? USER_DSH_RANK
-    : skill.home === 'host'
-      ? HOST_OCCUPY_RANK
-      : USER_AGENTS_RANK
+  const source = skill.home === 'dsh' ? 'user-dsh' : 'user-agents'
+  const rank = skill.home === 'dsh' ? USER_DSH_RANK : USER_AGENTS_RANK
   return {
     name: skill.name,
     description: skill.description,

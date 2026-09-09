@@ -1,3 +1,4 @@
+import { McpPanel } from './McpPanel.tsx'
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import {
   Button,
@@ -62,7 +63,6 @@ function brokenCopy(t: Copy, reason: { kind: string; target?: string; message?: 
 
 function homeLabel(t: Copy, home: HomeKind): string {
   if (home === 'agent') return t('home.agent')
-  if (home === 'host') return t('home.host')
   return t('home.dsh')
 }
 
@@ -270,6 +270,22 @@ function SkillLeaf(props: {
   onInherit: (kind: 'skill' | 'group', payload: Record<string, unknown>) => void
 }) {
   const skill = props.skill
+  const [copied, setCopied] = useState(false)
+  const copyName = async () => {
+    const text = `/${skill.name} `
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      const area = document.createElement('textarea')
+      area.value = text
+      document.body.appendChild(area)
+      area.select()
+      document.execCommand('copy')
+      area.remove()
+    }
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1500)
+  }
   return (
     <div className={`${css.row} ${css.leaf}`} style={{ '--depth': String(props.depth) } as CSSProperties}>
       <span className={css.chevronGhost} />
@@ -280,7 +296,16 @@ function SkillLeaf(props: {
         onChange={on => props.onToggle('skill', { id: skill.id }, on)}
       />
       <div className={css.name} {...skill.description !== undefined && skill.description !== '' ? { title: skill.description } : {}}>
-        <span className={css.nameText}>{props.label}</span>
+        <button
+          type="button"
+          className={css.nameBtn}
+          title={props.t('copy.slash', { name: skill.name })}
+          aria-label={props.t('copy.slash', { name: skill.name })}
+          onClick={() => void copyName()}
+        >
+          <span className={css.nameText}>{props.label}</span>
+        </button>
+        {copied ? <span className={css.source}>{props.t('copy.done')}</span> : null}
         {skill.collision ? <span className={css.collision}>{props.t('badge.collision')}</span> : null}
         {props.layer === 'global' ? null : <span className={css.source}>{sourceLabel(props.t, skill.source)}</span>}
       </div>
@@ -340,6 +365,7 @@ export function SkillHubPanel(props: {
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [dirty, setDirty] = useState(false)
 
   const canWriteSession = sessionId !== undefined && sessionId !== ''
   const canWriteProject = folder !== ''
@@ -365,6 +391,7 @@ export function SkillHubPanel(props: {
       setError(undefined)
       const next = await postCatalog(path, body)
       setCatalog(next)
+      setDirty(true)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
@@ -386,6 +413,7 @@ export function SkillHubPanel(props: {
       setError(undefined)
       try {
         setCatalog(await postCatalog('/toggle', toggleBody({ kind: 'ids', ids, on })))
+        setDirty(true)
         return
       } catch {
         let next: CatalogPayload | undefined
@@ -393,6 +421,7 @@ export function SkillHubPanel(props: {
           next = await postCatalog('/toggle', toggleBody({ kind: 'skill', id, on }))
         }
         if (next !== undefined) setCatalog(next)
+        setDirty(true)
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
@@ -516,6 +545,15 @@ export function SkillHubPanel(props: {
       </label>
 
       <div className={css.body} data-ud-check="skillhub-tree" data-ud-role="panel">
+        {layerReady && <McpPanel layer={layer} {...sessionId ? { sessionId } : {}} {...folder ? { folder } : {}} t={t} />}
+        {dirty && catalog !== undefined
+          ? (
+            <div className={css.bannerRow}>
+              <p className={css.warn} role="status">{t('refresh.hint')}</p>
+              <Button variant="outline" size="sm" onClick={() => window.location.reload()}>{t('refresh.action')}</Button>
+            </div>
+          )
+          : null}
         {error !== undefined
           ? (
             <div className={css.bannerRow}>

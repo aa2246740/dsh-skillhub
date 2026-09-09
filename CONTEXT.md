@@ -31,16 +31,12 @@ A folder in a Pack used as a batch toggle. It is not itself a Skill. Agent home 
 _Avoid_: category, namespace, 层级 (as the thing you toggle)
 
 **Visibility**:
-Which Skills DSH offers to the model catalog and the slash menu. Chat overrides win, then Project overrides, then Global Defaults. Missing overrides inherit live from the parent. Settings edits Global Defaults; the composer panel edits Project or Chat. Files stay on disk. Other agents keep seeing whatever they already read. After any Global Off, a skill with no gate stays Off, including host plugin skills. All on is the only state that auto-enables skills added later.
+Which disk Skills DSH offers to the model catalog and the slash menu. Chat overrides win, then Project overrides, then Global Defaults. Missing overrides inherit live from the parent. Settings edits Global Defaults; the composer panel edits Project or Chat. Files stay on disk. Other agents keep seeing whatever they already read. A per-Skill toggle changes only its target; All on and All off change the layer default, including for disk Skills added later. Plugin registrations are outside SkillHub ownership.
 _Avoid_: moving folders to `skills.disabled`, enable-on-disk, 可见性 as UI-only hide
 
 **Off**:
 A reversible Visibility choice. The Skill remains in its home and can be turned on again.
 _Avoid_: Delete, uninstall, skills.disabled
-
-**Delete**:
-Removing a Skill or Pack from a home, only after the user agrees. It is not Off.
-_Avoid_: 关, disable
 
 **Global**:
 The harness-wide default Visibility, edited only in Settings. Its default also applies to Skills added later.
@@ -55,9 +51,13 @@ One DSH session. Its Chat overrides beat Project and Global, while missing entri
 _Avoid_: 单轮, turn
 
 **Collision**:
-Two installed Skills that share the same name. SkillHub shows both and warns. The user decides what to Off or Delete. SkillHub does not rename, hide, or block them.
+Two installed Skills that share the same name. SkillHub shows both and warns. The user decides what to turn off. SkillHub does not rename or delete them.
 _Avoid_: automatic winner, path-qualified names in the catalog
 
 **Host skill**:
 A skill a DSH plugin registers itself. SkillHub does not list, Off, or Delete it, and must not stop the plugin from using it.
 _Avoid_: bundled, 插件内部 skill as SkillHub targets
+
+## MCP visibility
+
+MCP services are a separate catalog from disk Skills. Their tool-visibility documents live under the SkillHub store and follow Global, Project, Session inheritance. Visibility never means process stop, credential management or removal of prior conversation content. Only an unambiguously identified global tool registration can be fully hidden through the current public tool API. Unsupported scope or ownership is displayed explicitly.

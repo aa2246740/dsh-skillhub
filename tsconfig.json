@@ -1,5 +1,5 @@
 {
-  "extends": "../../tsconfig.base.client.json",
+  "extends": "../../runtime/tsconfig.base.client.json",
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "lib/types",
@@ -10,34 +10,34 @@
   ],
   "references": [
     {
-      "path": "../../vendor/cordis"
+      "path": "../../runtime/vendor/cordis"
     },
     {
-      "path": "../../vendor/schemastery"
+      "path": "../../runtime/vendor/schemastery"
     },
     {
-      "path": "../../packages/settings/settings"
+      "path": "../../runtime/packages/settings/settings"
     },
     {
-      "path": "../../packages/skill/skill"
+      "path": "../../runtime/packages/skill/skill"
     },
     {
-      "path": "../../packages/host/webserver"
+      "path": "../../runtime/packages/host/webserver"
     },
     {
-      "path": "../../packages/client/ui-conversation"
+      "path": "../../runtime/packages/client/ui-conversation"
     },
     {
-      "path": "../../packages/client/ui-primitives"
+      "path": "../../runtime/packages/client/ui-primitives"
     },
     {
-      "path": "../../packages/client/ui-renderer"
+      "path": "../../runtime/packages/client/ui-renderer"
     },
     {
-      "path": "../../packages/client/ui-settings-general"
+      "path": "../../runtime/packages/client/ui-settings-general"
     },
     {
-      "path": "../../packages/client/ui-slots"
+      "path": "../../runtime/packages/client/ui-slots"
     }
   ]
 }

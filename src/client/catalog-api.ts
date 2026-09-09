@@ -1,6 +1,6 @@
 export type LayerName = 'global' | 'project' | 'session'
 export type GateSource = LayerName
-export type HomeKind = 'agent' | 'dsh' | 'host'
+export type HomeKind = 'agent' | 'dsh'
 export type Gate = 'on' | 'off'
 export type GroupGate = 'on' | 'off' | 'mixed'
 
@@ -23,7 +23,6 @@ export type CatalogPayload = {
   broken: { path: string; reason: BrokenReason }[]
   layer?: LayerName
   legacySessionSnapshot: boolean
-  agentHomeDeleteWarning?: string
 }
 
 export type HomeRoot = {
