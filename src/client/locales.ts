@@ -1,9 +1,9 @@
 /** SkillHub copy. zh is the key-set source of truth. */
 
 export const zh = {
-  'nav': 'SkillHub',
+  'nav': 'skill&mcp',
   'chip': '技能',
-  'chip.aria': 'SkillHub',
+  'chip.aria': '技能',
 
   // Tabs
   'tab.skills': '技能',
@@ -110,9 +110,9 @@ export const zh = {
 export type SkillHubKey = keyof typeof zh
 
 export const en = {
-  'nav': 'SkillHub',
+  'nav': 'skill&mcp',
   'chip': 'Skills',
-  'chip.aria': 'SkillHub',
+  'chip.aria': 'Skills',
 
   // Tabs
   'tab.skills': 'Skills',

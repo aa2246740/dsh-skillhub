@@ -45,7 +45,7 @@ export function apply(ctx: ClientContext) {
     name: 'conversation.input.left',
     id: 'dsh-skillhub',
     order: 40,
-    label: () => t('nav'),
+    label: () => t('chip'),
     locale: NS,
   }, SkillHubChip))
 }

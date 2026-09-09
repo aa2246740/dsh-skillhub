@@ -455,7 +455,7 @@ export function SkillHubPanel(props: {
       aria-busy={busy}
     >
       <div className={css.tabsRow}>
-        <div className={css.eyebrow}>{t('nav')}</div>
+        {props.surface === 'page' ? <div className={css.eyebrow}>{t('nav')}</div> : null}
         <div className={css.tabs} role="tablist" aria-label={t('tab.aria')}>
           <button
             type="button"
