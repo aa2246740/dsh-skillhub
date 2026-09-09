@@ -1,15 +1,13 @@
 import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import {
-  AGENT_HOME_DELETE_WARNING,
   collectSkillGates,
   descendantSkillIds,
   findGroupByRel,
   resolveCatalog,
   type Catalog,
   type HomeKind,
-  type HostSkillNote,
   type LayerGate,
   type PackNode,
   type SkillId,
@@ -185,18 +183,10 @@ function targetIds(catalog: Catalog, target: VisibilityTarget): SkillId[] {
 }
 
 export class SkillHub {
-  private hostSkills: readonly HostSkillNote[] = []
-
   constructor(readonly paths: HubPaths) {
     mkdirSync(this.paths.agentHome, { recursive: true })
     mkdirSync(this.paths.dshHome, { recursive: true })
     mkdirSync(this.paths.storeDir, { recursive: true })
-  }
-
-  noteHostSkills(notes: readonly HostSkillNote[]): void {
-    const byName = new Map(this.hostSkills.map(note => [note.name, note]))
-    for (const note of notes) byName.set(note.name, note)
-    this.hostSkills = [...byName.values()]
   }
 
   private globalPath(): string {
@@ -242,7 +232,6 @@ export class SkillHub {
       global,
       ...layer !== 'global' && project !== undefined ? { project } : {},
       ...layer === 'session' && session !== undefined ? { session } : {},
-      ...this.hostSkills.length > 0 ? { hostSkills: this.hostSkills } : {},
     })
     return {
       ...catalog,
@@ -278,17 +267,7 @@ export class SkillHub {
       const nextGate: LayerGate = query.target.on ? 'on' : 'off'
       const gates = { ...current.gates }
       for (const id of ids) gates[id] = nextGate
-      let nextDefault = current.default
-      if (query.layer === 'global' && current.default === 'on' && nextGate === 'off') {
-        nextDefault = 'off'
-        const turningOff = new Set(ids)
-        for (const skill of catalog.inventory) {
-          if (skill.home === 'host') continue
-          if (turningOff.has(skill.id) || gates[skill.id] !== undefined) continue
-          if (skill.gate === 'on') gates[skill.id] = 'on'
-        }
-      }
-      writeDoc(path, { ...current, default: nextDefault, gates })
+      writeDoc(path, { ...current, gates })
     }
     return this.catalog({
       layer: query.layer,
@@ -344,7 +323,6 @@ export class SkillHub {
   }
 
   install(sourceDir: string, home: HomeKind): Catalog {
-    if (home === 'host') throw new Error('host skills cannot be installed into a home')
     const destHome = home === 'agent' ? this.paths.agentHome : this.paths.dshHome
     mkdirSync(destHome, { recursive: true })
     const name = basename(sourceDir)
@@ -356,34 +334,4 @@ export class SkillHub {
     return this.catalog({})
   }
 
-  deletePack(home: HomeKind, name: string, confirmPath?: string): { warning?: string; catalog: Catalog } {
-    if (home === 'host') throw new Error('host skills cannot be deleted from a home')
-    const destHome = home === 'agent' ? this.paths.agentHome : this.paths.dshHome
-    const dest = join(destHome, name)
-    if (!existsSync(dest) && !lstatExists(dest)) {
-      throw new Error(`Pack "${name}" is not in ${home} home`)
-    }
-    const warning = home === 'agent' ? AGENT_HOME_DELETE_WARNING : undefined
-    const stat = lstatSync(dest)
-    if (stat.isSymbolicLink()) {
-      unlinkSync(dest)
-    } else {
-      if (confirmPath !== dest) {
-        throw new Error(`Confirm the path ${dest} to delete this directory`)
-      }
-      rmSync(dest, { recursive: true, force: true })
-    }
-    const catalog = this.catalog({})
-    if (warning === undefined) return { catalog }
-    return { warning, catalog }
-  }
-}
-
-function lstatExists(path: string): boolean {
-  try {
-    lstatSync(path)
-    return true
-  } catch {
-    return false
-  }
 }

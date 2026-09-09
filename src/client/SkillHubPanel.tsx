@@ -1,8 +1,11 @@
+import { McpPanel } from './McpPanel.tsx'
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import {
   Button,
   IconChevronRightOutline14,
+  IconCordisPluginOutline14,
   IconSearchOutline16,
+  IconSkillOutline16,
   IconWarningOutline16,
   Input,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -25,25 +28,25 @@ export type SkillHubSurface = 'page' | 'popover'
 
 type Copy = Translate<SkillHubKey>
 
-function layerHelp(t: Copy, layer: LayerName): string {
+export function layerHelp(t: Copy, layer: LayerName): string {
   if (layer === 'session') return t('help.session')
   if (layer === 'project') return t('help.project')
   return t('help.global')
 }
 
-function layerLabel(t: Copy, layer: LayerName): string {
+export function layerLabel(t: Copy, layer: LayerName): string {
   if (layer === 'session') return t('layer.session')
   if (layer === 'project') return t('layer.project')
   return t('layer.global')
 }
 
-function sourceLabel(t: Copy, source: LayerName): string {
+export function sourceLabel(t: Copy, source: LayerName): string {
   if (source === 'session') return t('source.session')
   if (source === 'project') return t('source.project')
   return t('source.global')
 }
 
-function gateWord(t: Copy, gate: Gate | GroupGate): string {
+export function gateWord(t: Copy, gate: Gate | GroupGate): string {
   if (gate === 'on') return t('gate.on')
   if (gate === 'off') return t('gate.off')
   return t('gate.mixed')
@@ -62,7 +65,6 @@ function brokenCopy(t: Copy, reason: { kind: string; target?: string; message?: 
 
 function homeLabel(t: Copy, home: HomeKind): string {
   if (home === 'agent') return t('home.agent')
-  if (home === 'host') return t('home.host')
   return t('home.dsh')
 }
 
@@ -270,6 +272,22 @@ function SkillLeaf(props: {
   onInherit: (kind: 'skill' | 'group', payload: Record<string, unknown>) => void
 }) {
   const skill = props.skill
+  const [copied, setCopied] = useState(false)
+  const copyName = async () => {
+    const text = `/${skill.name} `
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      const area = document.createElement('textarea')
+      area.value = text
+      document.body.appendChild(area)
+      area.select()
+      document.execCommand('copy')
+      area.remove()
+    }
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1500)
+  }
   return (
     <div className={`${css.row} ${css.leaf}`} style={{ '--depth': String(props.depth) } as CSSProperties}>
       <span className={css.chevronGhost} />
@@ -280,9 +298,20 @@ function SkillLeaf(props: {
         onChange={on => props.onToggle('skill', { id: skill.id }, on)}
       />
       <div className={css.name} {...skill.description !== undefined && skill.description !== '' ? { title: skill.description } : {}}>
-        <span className={css.nameText}>{props.label}</span>
+        <button
+          type="button"
+          className={css.nameBtn}
+          title={props.t('copy.slash', { name: skill.name })}
+          aria-label={props.t('copy.slash', { name: skill.name })}
+          onClick={() => void copyName()}
+        >
+          <span className={css.nameText}>{props.label}</span>
+        </button>
+        {copied ? <span className={css.source}>{props.t('copy.done')}</span> : null}
         {skill.collision ? <span className={css.collision}>{props.t('badge.collision')}</span> : null}
-        {props.layer === 'global' ? null : <span className={css.source}>{sourceLabel(props.t, skill.source)}</span>}
+        {props.layer !== 'global' && skill.source === props.layer
+          ? <span className={css.source}>{sourceLabel(props.t, skill.source)}</span>
+          : null}
       </div>
       {props.layer !== 'global' && skill.source === props.layer
         ? (
@@ -301,7 +330,7 @@ function SkillLeaf(props: {
   )
 }
 
-function GateSwitch(props: {
+export function GateSwitch(props: {
   gate: Gate | GroupGate
   label: string
   disabled: boolean
@@ -340,6 +369,9 @@ export function SkillHubPanel(props: {
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [dirty, setDirty] = useState(false)
+  const [tab, setTab] = useState<'skills' | 'mcp'>('skills')
+  const [mcpServerCount, setMcpServerCount] = useState<number | undefined>()
 
   const canWriteSession = sessionId !== undefined && sessionId !== ''
   const canWriteProject = folder !== ''
@@ -365,6 +397,7 @@ export function SkillHubPanel(props: {
       setError(undefined)
       const next = await postCatalog(path, body)
       setCatalog(next)
+      setDirty(true)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
@@ -386,6 +419,7 @@ export function SkillHubPanel(props: {
       setError(undefined)
       try {
         setCatalog(await postCatalog('/toggle', toggleBody({ kind: 'ids', ids, on })))
+        setDirty(true)
         return
       } catch {
         let next: CatalogPayload | undefined
@@ -393,6 +427,7 @@ export function SkillHubPanel(props: {
           next = await postCatalog('/toggle', toggleBody({ kind: 'skill', id, on }))
         }
         if (next !== undefined) setCatalog(next)
+        setDirty(true)
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
@@ -419,134 +454,190 @@ export function SkillHubPanel(props: {
       data-skillhub-panel=""
       aria-busy={busy}
     >
-      <header className={css.header} data-ud-check="skillhub-header" data-ud-role="nav">
-        <div className={css.titleRow}>
-          <div className={css.titleBlock}>
-            <div className={css.eyebrow}>{t('nav')}</div>
-            <h2 className={css.title}>{t(props.surface === 'page' ? 'title.global' : 'title.context')}</h2>
-            <p className={css.lede}>{t(props.surface === 'page' ? 'lede.global' : 'lede.context')}</p>
+      <div className={css.tabsRow}>
+        <div className={css.eyebrow}>{t('nav')}</div>
+        <div className={css.tabs} role="tablist" aria-label={t('tab.aria')}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'skills'}
+            className={css.tabBtn}
+            data-active={tab === 'skills' ? '' : undefined}
+            onClick={() => setTab('skills')}
+          >
+            <IconSkillOutline16 size={14} />
+            <span>{t('tab.skills')}</span>
+            {counts.on + counts.off > 0 ? (
+              <span className={css.tabBadge}>{counts.on + counts.off}</span>
+            ) : null}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'mcp'}
+            className={css.tabBtn}
+            data-active={tab === 'mcp' ? '' : undefined}
+            onClick={() => setTab('mcp')}
+          >
+            <IconCordisPluginOutline14 size={14} />
+            <span>{t('tab.mcp')}</span>
+            {mcpServerCount !== undefined && mcpServerCount > 0 ? (
+              <span className={css.tabBadge}>{mcpServerCount}</span>
+            ) : null}
+          </button>
+        </div>
+
+        {props.layers.length > 1 ? (
+          <div className={css.segment} role="radiogroup" aria-label={t('layer.aria')}>
+            {props.layers.map(name => {
+              const disabled = (name === 'session' && !canWriteSession) || (name === 'project' && !canWriteProject)
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  role="radio"
+                  aria-checked={layer === name}
+                  data-active={layer === name ? '' : undefined}
+                  disabled={disabled}
+                  {...(name === 'session' && !canWriteSession
+                    ? { title: t('session.needsChat') }
+                    : name === 'project' && !canWriteProject
+                      ? { title: t('project.needsWorkspace') }
+                      : {})}
+                  onClick={() => setLayer(name)}
+                >
+                  {layerLabel(t, name)}
+                </button>
+              )
+            })}
           </div>
-          <div className={css.headerActions}>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!layerReady || busy || catalog === undefined}
-              onClick={() => void mutate('/toggle', toggleBody({ kind: 'all', on: false }))}
-            >
-              {t('allOff')}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!layerReady || busy || catalog === undefined}
-              onClick={() => void mutate('/toggle', toggleBody({ kind: 'all', on: true }))}
-            >
-              {t('allOn')}
-            </Button>
-            {layer === 'global'
-              ? null
-              : (
+        ) : null}
+      </div>
+
+      {tab === 'mcp' ? (
+        <McpPanel
+          surface={props.surface}
+          layer={layer}
+          sessionId={sessionId}
+          folder={folder}
+          canWriteSession={canWriteSession}
+          canWriteProject={canWriteProject}
+          layerReady={layerReady}
+          onServerCountChange={setMcpServerCount}
+          t={t}
+        />
+      ) : (
+        <>
+          <header className={css.header} data-ud-check="skillhub-header" data-ud-role="nav">
+            <div className={css.titleRow}>
+              <div className={css.titleBlock}>
+                <h2 className={css.title}>{t(props.surface === 'page' ? 'title.global' : 'title.context')}</h2>
+                <p className={css.lede}>{t(props.surface === 'page' ? 'lede.global' : 'lede.context')}</p>
+              </div>
+              <div className={css.headerActions}>
                 <Button
                   variant="ghost"
                   size="sm"
                   disabled={!layerReady || busy || catalog === undefined}
-                  onClick={() => void mutate('/inherit', toggleBody({ kind: 'all' }))}
+                  onClick={() => void mutate('/toggle', toggleBody({ kind: 'all', on: false }))}
                 >
-                  {t('allInherit')}
+                  {t('allOff')}
                 </Button>
-              )}
-          </div>
-        </div>
-        {catalog !== undefined
-          ? (
-            <div className={css.counts} aria-live="polite">
-              <span>{t('count.on', { n: counts.on })}</span>
-              <span>{t('count.off', { n: counts.off })}</span>
-              {catalog.collisions.length > 0
-                ? <span>{t('count.collisions', { n: catalog.collisions.length })}</span>
-                : null}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={!layerReady || busy || catalog === undefined}
+                  onClick={() => void mutate('/toggle', toggleBody({ kind: 'all', on: true }))}
+                >
+                  {t('allOn')}
+                </Button>
+                {layer !== 'global' && catalog !== undefined && collectSkills(catalog.tree.flatMap(h => h.children)).some(s => s.source === layer) ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={!layerReady || busy || catalog === undefined}
+                    onClick={() => void mutate('/inherit', toggleBody({ kind: 'all' }))}
+                  >
+                    {t('allInherit')}
+                  </Button>
+                ) : null}
+              </div>
             </div>
-          )
-          : null}
-      </header>
+            {catalog !== undefined
+              ? (
+                <div className={css.counts} aria-live="polite">
+                  <span>{t('count.on', { n: counts.on })}</span>
+                  <span>{t('count.off', { n: counts.off })}</span>
+                  {catalog.collisions.length > 0
+                    ? <span>{t('count.collisions', { n: catalog.collisions.length })}</span>
+                    : null}
+                </div>
+              )
+              : null}
+          </header>
 
-      <div className={css.layer} data-ud-check="skillhub-layer">
-        {props.layers.length === 1
-          ? <div className={css.scope}>{layerLabel(t, layer)}</div>
-          : (
-            <div className={css.segment} role="radiogroup" aria-label={t('layer.aria')}>
-              {props.layers.map(name => {
-            const disabled = (name === 'session' && !canWriteSession) || (name === 'project' && !canWriteProject)
-            return (
-              <button
-                key={name}
-                type="button"
-                role="radio"
-                aria-checked={layer === name}
-                data-active={layer === name ? '' : undefined}
-                disabled={disabled}
-                {...((name === 'session' && !canWriteSession)
-                  ? { title: t('session.needsChat') }
-                  : (name === 'project' && !canWriteProject)
-                    ? { title: t('project.needsWorkspace') }
-                    : {})}
-                onClick={() => setLayer(name)}
-              >
-                {layerLabel(t, name)}
-              </button>
-            )
-              })}
-            </div>
-          )}
-        <p className={css.helper} id="skillhub-layer-help">{layerHelp(t, layer)}</p>
-        {layer === 'project' && folder !== ''
-          ? <p className={css.path} title={folder}>{folder}</p>
-          : null}
-      </div>
+          <label className={css.search}>
+            <span className={css.helper}>{t('search')}</span>
+            <Input
+              className={css.field ?? ''}
+              icon={<IconSearchOutline16 size={16} />}
+              value={query}
+              placeholder={t('search.placeholder')}
+              onChange={event => setQuery(event.currentTarget.value)}
+            />
+          </label>
 
-      <label className={css.search}>
-        <span className={css.helper}>{t('search')}</span>
-        <Input
-          className={css.field ?? ''}
-          icon={<IconSearchOutline16 size={16} />}
-          value={query}
-          placeholder={t('search.placeholder')}
-          onChange={event => setQuery(event.currentTarget.value)}
-        />
-      </label>
-
-      <div className={css.body} data-ud-check="skillhub-tree" data-ud-role="panel">
-        {error !== undefined
-          ? (
-            <div className={css.bannerRow}>
-              <p className={css.error} role="alert">{t('error.load', { error })}</p>
-              <Button variant="outline" size="sm" onClick={() => void load()}>{t('error.retry')}</Button>
-            </div>
-          )
-          : null}
-        {catalog !== undefined && catalog.collisions.length > 0
-          ? (
-            <p className={css.warn} role="status">
-              {t('collision.warn')}
-              {' '}
-              {catalog.collisions.map(row => row.name).join(', ')}
-            </p>
-          )
-          : null}
-        {catalog?.legacySessionSnapshot === true
-          ? <p className={css.warn} role="status">{t('legacy.snapshot')}</p>
-          : null}
-        {catalog === undefined && error === undefined
-          ? (
-            <div className={css.skeleton} aria-label={t('loading')}>
-              <div className={css.skel} />
-              <div className={css.skel} />
-              <div className={css.skel} />
-            </div>
-          )
-          : null}
-        {catalog !== undefined
-          ? catalog.tree.map(home => {
+          <div className={css.body} data-ud-check="skillhub-tree" data-ud-role="panel">
+            {dirty && catalog !== undefined
+              ? (
+                <div className={css.bannerRow}>
+                  <p className={css.warn} role="status">{t('refresh.hint')}</p>
+                  <Button variant="outline" size="sm" onClick={() => window.location.reload()}>{t('refresh.action')}</Button>
+                </div>
+              )
+              : null}
+            {error !== undefined
+              ? (
+                <div className={css.bannerRow}>
+                  <p className={css.error} role="alert">{t('error.load', { error })}</p>
+                  <Button variant="outline" size="sm" onClick={() => void load()}>{t('error.retry')}</Button>
+                </div>
+              )
+              : null}
+            {catalog !== undefined && catalog.collisions.length > 0
+              ? (
+                <p className={css.warn} role="status">
+                  {t('collision.warn')}
+                  {' '}
+                  {catalog.collisions.map(row => row.name).join(', ')}
+                </p>
+              )
+              : null}
+            {catalog?.legacySessionSnapshot === true
+              ? <p className={css.warn} role="status">{t('legacy.snapshot')}</p>
+              : null}
+            {catalog === undefined && error === undefined
+              ? (
+                <div className={css.skeleton} aria-label={t('loading')}>
+                  <div className={css.skel} />
+                  <div className={css.skel} />
+                  <div className={css.skel} />
+                </div>
+              )
+              : null}
+            {catalog !== undefined && counts.on + counts.off === 0 && needle === ''
+              ? (
+                <div className={css.emptyCard} data-ud-check="skillhub-skills-empty">
+                  <div className={css.emptyIcon}>
+                    <IconSkillOutline16 size={28} />
+                  </div>
+                  <h4 className={css.emptyTitle}>{t('skills.empty.title')}</h4>
+                  <p className={css.emptyDesc}>{t('skills.empty.desc')}</p>
+                </div>
+              )
+              : null}
+            {catalog !== undefined && (counts.on + counts.off > 0 || needle !== '')
+              ? catalog.tree.map(home => {
             const clustered = clusterFlatPacks(home.children)
             const children = needle === ''
               ? clustered
@@ -657,13 +748,14 @@ export function SkillHubPanel(props: {
                     )
                     : null}
                 </div>
-                <p className={css.homePath} title={home.path}>{home.path}</p>
                 {homeOpen ? tree : null}
               </section>
             )
           })
           : null}
       </div>
+        </>
+      )}
     </div>
   )
 }

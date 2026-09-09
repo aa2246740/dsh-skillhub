@@ -8,7 +8,7 @@ export function isHostSkillName(name: string): boolean {
   return HOST_SKILL_NAME.test(name)
 }
 
-export type HomeKind = 'agent' | 'dsh' | 'host'
+export type HomeKind = 'agent' | 'dsh'
 export type Gate = 'on' | 'off'
 export type VisibilityLayer = 'global' | 'project' | 'session'
 export type LayerGate = Gate | 'inherit'
@@ -168,22 +168,12 @@ export interface Catalog {
   readonly legacySessionSnapshot?: boolean
 }
 
-export interface HostSkillNote {
-  readonly name: string
-  readonly description: string
-  readonly whenToUse?: string
-  readonly provider: string
-  readonly path: AbsolutePath
-  readonly directory: AbsolutePath
-}
-
 export interface ResolveInput {
   readonly agentHome: AbsolutePath
   readonly dshHome: AbsolutePath
   readonly global?: VisibilityDocument
   readonly project?: VisibilityDocument
   readonly session?: VisibilityDocument
-  readonly hostSkills?: readonly HostSkillNote[]
 }
 
 type ParsedSkill = {
@@ -266,15 +256,6 @@ function listEntries(dir: string): string[] {
   }
 }
 
-function documentHasOffGate(document: VisibilityDocument): boolean {
-  return Object.values(document.gates).some(gate => gate === 'off')
-}
-
-function unlistedDefault(document: VisibilityDocument): LayerGate {
-  if (document.default === 'on' && documentHasOffGate(document)) return 'off'
-  return document.default
-}
-
 function applyVisibility(
   id: SkillId,
   document: VisibilityDocument | undefined,
@@ -282,7 +263,7 @@ function applyVisibility(
   fallback: { gate: Gate; source: VisibilityLayer },
 ): { gate: Gate; source: VisibilityLayer } {
   if (document === undefined) return fallback
-  const value = document.gates[id] ?? unlistedDefault(document)
+  const value = document.gates[id] ?? document.default
   if (value === 'inherit') return fallback
   return { gate: value, source }
 }
@@ -561,40 +542,6 @@ export function resolveCatalog(input: ResolveInput): Catalog {
     for (const id of skills) collisionIds.add(id)
   }
 
-  const takenNames = new Set(leaves.map(leaf => leaf.parsed.name))
-  const hostChildren: CatalogNode[] = []
-  for (const note of input.hostSkills ?? []) {
-    if (!isHostSkillName(note.name) || takenNames.has(note.name)) continue
-    takenNames.add(note.name)
-    const id = skillId('host', `${note.name}/SKILL.md`)
-    leaves.push({
-      id,
-      home: 'host',
-      relPath: `${note.name}/SKILL.md`,
-      path: note.path,
-      directory: note.directory,
-      parsed: {
-        name: note.name,
-        description: note.description,
-        ...note.whenToUse !== undefined ? { whenToUse: note.whenToUse } : {},
-        modelInvocable: true,
-        userInvocable: true,
-        content: '',
-      },
-    })
-    hostChildren.push({
-      kind: 'root-skill',
-      id,
-      name: note.name,
-      description: note.description,
-      home: 'host',
-      path: note.path,
-      gate: 'on',
-      source: 'global',
-      collision: false,
-    })
-  }
-
   const tree: HomeRoot[] = [
     {
       kind: 'home',
@@ -608,12 +555,6 @@ export function resolveCatalog(input: ResolveInput): Catalog {
       path: input.dshHome,
       children: applyGatesToTree(dshChildren, collisionIds, input),
     },
-    ...hostChildren.length === 0 ? [] : [{
-      kind: 'home' as const,
-      home: 'host' as const,
-      path: 'plugin',
-      children: applyGatesToTree(hostChildren, collisionIds, input),
-    }],
   ]
 
   const inventory: ManagedSkill[] = []
@@ -832,6 +773,3 @@ export function collectSkillGates(tree: readonly HomeRoot[]): { id: SkillId; gat
   for (const home of tree) walk(home.children)
   return rows
 }
-
-export const AGENT_HOME_DELETE_WARNING =
-  'Deleting from Agent home removes this Pack for every agent on this machine, including Grok and Codex.'

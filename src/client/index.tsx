@@ -63,7 +63,9 @@ function SkillHubSettings(props: PropsRuntime<'settings.section'> & PropsLocale<
 
 function SkillHubChip(props: PropsRuntime<'conversation.input.left'> & PropsLocale<'skillhub'>) {
   const sessionId = props.sessionId
-  const folder = props.useSessions(list => list.byId[sessionId]?.cwd ?? '')
+  // Store rehydration/reconnect windows can transiently deliver a list
+  // slice without byId; a throw here unmounts the whole composer input.
+  const folder = props.useSessions(list => list.byId?.[sessionId]?.cwd ?? '')
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
