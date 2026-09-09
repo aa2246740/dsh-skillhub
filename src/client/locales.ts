@@ -1,13 +1,33 @@
 /** SkillHub copy. zh is the key-set source of truth. */
 
 export const zh = {
+  'tab.skills': '技能',
+  'tab.mcp': 'MCP 服务',
+  'tab.aria': '功能标签',
+
   'mcp.title': 'MCP 服务',
+  'mcp.title.global': '全局 MCP 可见性',
+  'mcp.title.context': '当前范围的 MCP 服务',
+  'mcp.lede.global': '按服务控制后续对话中模型可调用的 MCP 工具。关闭服务后，模型看不到且无法调用其工具，净化上下文；后台服务进程保持常驻。',
+  'mcp.lede.context': '按服务设置当前范围的 MCP 工具可见性。项目和对话只保存覆盖项，未设置项跟随上一级。',
   'mcp.help': '按服务控制后续请求中的工具可见性，进程保持运行。已发送的上下文不会撤回。',
+  'mcp.help.session': '只写入本对话覆盖；未覆盖项跟随项目。',
+  'mcp.help.project': '只写入本项目覆盖；未覆盖项跟随全局默认。',
+  'mcp.help.global': '所有项目的基础配置。新接入的 MCP 服务默认开启。',
   'mcp.empty': '当前没有已注册的 MCP 服务。',
+  'mcp.empty.title': '未检测到已连接的 MCP 服务',
+  'mcp.empty.desc': '当前 DSH 环境中暂无活跃运行的 MCP 外部服务。当通过配置文件（如 cordis.patch.yml）配置并启动 MCP 服务后，将在此处提供按服务可见性控制，保护模型上下文。',
+  'mcp.empty.note': '提示：MCP 服务由 DSH 核心或配置管理，SkillHub 负责按服务屏蔽其工具与上下文。',
   'mcp.tools': '{n} 个工具',
   'mcp.inherit': '恢复跟随',
+  'mcp.inherit.server': '让 MCP 服务 {name} 恢复跟随上一级',
   'mcp.unsupported': '作用域或名称归属不明确，暂不支持隐藏',
   'mcp.unavailable': 'MCP 服务端尚未就绪，请稍后重开面板。',
+  'switch.mcp': 'MCP 服务 {name}，{state}',
+
+  'skills.empty.title': '未发现已安装技能',
+  'skills.empty.desc': '在 ~/.agents/skills 或 ~/.dsh/skills 中添加技能目录后即可在此管理。',
+  'skills.empty.search': '没有找到匹配的技能',
 
   'nav': 'SkillHub & MCP',
   'chip': '技能',
@@ -74,13 +94,34 @@ export const zh = {
 export type SkillHubKey = keyof typeof zh
 
 export const en = {
+  'tab.skills': 'Skills',
+  'tab.mcp': 'MCP Services',
+  'tab.aria': 'Category tabs',
+
   'mcp.title': 'MCP services',
+  'mcp.title.global': 'Global MCP visibility',
+  'mcp.title.context': 'MCP services for this context',
+  'mcp.lede.global': 'Control model-facing tool visibility by MCP service. Hiding a service removes its tools from model context; background processes remain alive.',
+  'mcp.lede.context': 'Set MCP tool visibility for this context. Projects and chats store overrides only; unset services follow their parent.',
   'mcp.help': 'Control tool visibility for subsequent requests by service. Processes keep running; previous context is retained.',
+  'mcp.help.session': 'Writes chat overrides only. Services without overrides follow the Project.',
+  'mcp.help.project': 'Writes Project overrides only. Services without overrides follow Global Defaults.',
+  'mcp.help.global': 'Base state for all projects. Newly connected MCP services start enabled.',
   'mcp.empty': 'No MCP services are currently registered.',
+  'mcp.empty.title': 'No connected MCP services',
+  'mcp.empty.desc': 'No active MCP services were detected in this DSH environment. When MCP services are configured (e.g. via cordis.patch.yml) and running, visibility controls will appear here to keep model context clean.',
+  'mcp.empty.note': 'Note: MCP services are hosted by DSH or configuration; SkillHub manages per-service tool visibility.',
   'mcp.tools': '{n} tools',
   'mcp.inherit': 'Inherit',
+  'mcp.inherit.server': 'Make MCP service {name} follow its parent',
   'mcp.unsupported': 'Scope or ownership is ambiguous; hiding is unavailable',
   'mcp.unavailable': 'MCP host is not ready. Reopen this panel shortly.',
+  'switch.mcp': 'MCP service {name}, {state}',
+
+  'skills.empty.title': 'No skills installed',
+  'skills.empty.desc': 'Add skill directories to ~/.agents/skills or ~/.dsh/skills to manage them here.',
+  'skills.empty.search': 'No matching skills found',
+
   'nav': 'SkillHub & MCP',
   'chip': 'Skills',
   'chip.aria': 'SkillHub',

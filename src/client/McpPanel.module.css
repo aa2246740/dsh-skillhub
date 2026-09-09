@@ -1,9 +1,1 @@
-.section { border-top: 1px solid var(--border-color, #ddd); padding: 14px 0; margin-top: 12px; }
-.section h3 { font-size: 14px; margin: 0 0 6px; }
-.help, .row small { opacity: .7; font-size: 12px; line-height: 1.5; }
-.row { display: flex; align-items: center; gap: 8px; justify-content: space-between; padding: 9px 0; }
-.label { display: flex; gap: 9px; align-items: center; min-width: 0; }
-.label span { min-width: 0; overflow-wrap: anywhere; }
-.label small { display: block; }
-.row button { font: inherit; background: transparent; color: inherit; border: 1px solid var(--border-color, #ccc); border-radius: 6px; padding: 3px 7px; flex-shrink: 0; }
-.error { color: #c2410c; font-size: 12px; overflow-wrap: anywhere; }
+/* Styles consolidated into SkillHubPanel.module.css */
