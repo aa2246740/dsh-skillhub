@@ -1,5 +1,4 @@
-# portable overlay: relative name only. --patch resolves against the profile
-# directory, so cold-boot through `dshx start` / `dshx verify-boot`, not raw pnpm dsh.
+# Developer overlay: relative source name only. Stock installs use cordis.patch.yml.
 - insert:
     - id: dsh-skillhub
       name: './src/dsh-skillhub.ts'
