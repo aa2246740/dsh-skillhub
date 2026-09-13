@@ -8,16 +8,16 @@ import { test } from 'node:test'
 import { McpHub } from '../lib/types/mcp.js'
 import { installMcpVisibility, liveMcpServers } from '../lib/types/mcp-runtime.js'
 const harness = process.env.DSHX_HARNESS
-if (!harness) throw new Error('Set DSHX_HARNESS for real Cordis regression')
-const req = createRequire(join(harness,'apps/cli/package.json'))
-const { Context } = await import(pathToFileURL(req.resolve('@deepseek-ai/cordis')))
-const load = path => import(pathToFileURL(join(harness,'packages',path,'lib/index.js')))
-const { default: SystemPrompt } = await load('core/system-prompt')
-const { default: ToolRuntime } = await load('core/tools')
-const { createScope } = await load('core/scope')
+const skipHarness = !harness
+const req = skipHarness ? undefined : createRequire(join(harness, 'apps/cli/package.json'))
+const { Context } = skipHarness ? { Context: undefined } : await import(pathToFileURL(req.resolve('@deepseek-ai/cordis')))
+const load = path => import(pathToFileURL(join(harness, 'packages', path, 'lib/index.js')))
+const SystemPrompt = skipHarness ? undefined : (await load('core/system-prompt')).default
+const ToolRuntime = skipHarness ? undefined : (await load('core/tools')).default
+const createScope = skipHarness ? undefined : (await load('core/scope')).createScope
 const tool = name => ({name,description:name,parameters:{type:'object',properties:{}},output:{schema:{type:'string'},render:(_,v)=>[{type:'text',text:v}]},async execute(){return 'ok'}})
 
-test('actual Cordis hides, restores, handles late tools/reconnect and cleans up HMR',async()=>{
+test('actual Cordis hides, restores, handles late tools/reconnect and cleans up HMR', { skip: skipHarness }, async()=>{
  const ctx=new Context(); const dir=mkdtempSync(join(tmpdir(),'skillhub-cordis-'))
  try {
   await ctx.plugin(SystemPrompt,{}); await ctx.plugin(ToolRuntime)
@@ -59,7 +59,7 @@ test('actual Cordis hides, restores, handles late tools/reconnect and cleans up 
  } finally { await ctx.fiber.dispose(); rmSync(dir,{recursive:true,force:true}) }
 })
 
-test('real stdio MCP connection remains live while one session hides its tools',async()=>{
+test('real stdio MCP connection remains live while one session hides its tools', { skip: skipHarness }, async()=>{
  const ctx=new Context(); const dir=mkdtempSync(join(tmpdir(),'skillhub-mcp-wire-'))
  try {
   await ctx.plugin(SystemPrompt,{}); await ctx.plugin(ToolRuntime)

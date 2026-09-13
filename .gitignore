@@ -1,5 +1,4 @@
 node_modules
-lib/
 coverage/
 .dshx/
 *.tsbuildinfo
@@ -8,3 +7,8 @@ coverage/
 .env.*
 .npmrc
 pnpm-workspace.yaml
+lib/types/**/*.js
+lib/types/**/*.js.map
+lib/types/**/*.d.ts.map
+lib/types/client/
+*.tgz
