@@ -1,6 +1,6 @@
 {
   "name": "dsh-skillhub",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "DSH manager for user Skills already on disk in Agent home and DSH home",
   "repository": {
     "type": "git",
@@ -10,6 +10,13 @@
   "bugs": {
     "url": "https://github.com/aa2246740/dsh-skillhub/issues"
   },
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "skills",
+    "mcp",
+    "cordis"
+  ],
   "type": "module",
   "main": "lib/dsh-skillhub.js",
   "types": "lib/types/dsh-skillhub.d.ts",
@@ -24,7 +31,6 @@
       "default": "./lib/dsh-skillhub.js"
     },
     "./client": {
-      "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
     },
     "./package.json": "./package.json"
@@ -49,7 +55,9 @@
     "lib/*.js",
     "lib/types/**/*.d.ts",
     "cordis.patch.yml",
+    "cordis.yml",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "engines": {
@@ -66,6 +74,7 @@
     "@deepseek-ai/dsh-client-ui-settings-general": "^0.1.2-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.2-rc.1",
     "@deepseek-ai/dsh-host-webserver": "^0.1.2-rc.1",
+    "@deepseek-ai/dsh-scope": "^0.1.2-rc.1",
     "@deepseek-ai/dsh-settings": "^0.1.2-rc.1",
     "@deepseek-ai/dsh-skill": "^0.1.2-rc.1",
     "@deepseek-ai/schemastery": "^3.18.2"
@@ -80,6 +89,7 @@
     "@deepseek-ai/dsh-client-ui-settings-general": "0.1.2-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "0.1.2-rc.1",
     "@deepseek-ai/dsh-host-webserver": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-scope": "0.1.2-rc.1",
     "@deepseek-ai/dsh-settings": "0.1.2-rc.1",
     "@deepseek-ai/dsh-skill": "0.1.2-rc.1",
     "@deepseek-ai/schemastery": "^3.18.2",

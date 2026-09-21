@@ -12,3 +12,4 @@ lib/types/**/*.js.map
 lib/types/**/*.d.ts.map
 lib/types/client/
 *.tgz
+lib/*.js.map

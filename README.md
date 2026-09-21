@@ -1,57 +1,139 @@
-# dsh-skillhub
+<div align="center">
 
-列出已经在磁盘上的 Skills：Agent home `~/.agents/skills` 和 DSH home `$DSH_HOME/skills`。设置页管 Global Defaults，composer 面板管 Project 和 Chat 覆盖。
+# 🧩 dsh-skillhub
 
-```sh
-dsh plugin --profile web add github:aa2246740/dsh-skillhub
+*为 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness) 打造的本地技能与 MCP 服务统一开关管理插件*
+
+```bash
+dsh plugin --profile web add github:aa2246740/dsh-skillhub#v1.0.0
 ```
 
-PATH 上要有 **pnpm**，以及 `dsh`（或 `npx @deepseek-ai/dsh`）。装完**重启这个 Host，再刷新页面**。`dsh plugin add` 只写 profile，不会热挂正在跑的进程。仓库已提交 `lib/`，git 安装不用再 build。
+已包含编译产物，安装无需 pnpm 或本地构建。
 
-`dsh` 不在 PATH 时：
+[![GitHub Release](https://img.shields.io/badge/release-v1.0.0-blue?style=flat-square)](https://github.com/aa2246740/dsh-skillhub/releases)
+[![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-0.1.5--rc.2-4F46E5?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
+[![License](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/aa2246740/dsh-skillhub?style=flat-square)](https://github.com/aa2246740/dsh-skillhub/stargazers)
 
-```sh
-npx @deepseek-ai/dsh plugin --profile web add github:aa2246740/dsh-skillhub
+[特性亮点](#-特性) • [一键安装](#-安装) • [使用指南](#-使用说明) • [传导机制](#-开关传导规则) • [常见问题](#-常见问题)
+
+</div>
+
+---
+
+## 📖 简介
+
+**dsh-skillhub** 是专为 DeepSeek Harness 设计的本地技能与 MCP 统一开关管理面板。
+
+它能自动扫描并列出磁盘上已有的所有 Skills（`~/.agents/skills` 与 `$DSH_HOME/skills`）以及运行中的 MCP 工具服务，提供 **全局 (Global) / 本项目 (Project) / 本对话 (Chat)** 三层独立开关控制与智能向下传导能力。
+
+无需手动修改配置，安装后自动挂载，纯可见性控制，绝不修改或删除任何原始磁盘文件。
+
+---
+
+## ✨ 特性
+
+- ⚡ **一键即用**：严格遵循 DSH 官方 Bundle 规范，一行命令自动挂载，无需繁琐接线。
+- 🗂️ **本地技能即插即用**：自动读取 Agent 目录与 DSH 目录技能，原生安全，不增删改磁盘文件。
+- 🎯 **三层作用范围**：全局设置机器默认值、项目管理工程级偏好、单对话按需微调，互不干扰。
+- 🔄 **智能向下传导**：全局操作同步覆盖所有层，项目操作同步所属对话，对话临时覆盖，新会话自动继承。
+- 🔌 **MCP 服务联动支持**：独立的 MCP 页签，按服务动态隐藏/暴露工具，进程常驻。
+- 🎨 **原生细节融合**：无感切换作用范围（彻底消除骨架屏闪烁），带开关生效贴心提示（如刷新页面以载入 `/` 自动补全）。
+- 🚀 **开箱即用**：`main` 分支已内置编译产物，用户端免装编译环境、免配置 `allowBuilds`。
+
+---
+
+## 📦 安装
+
+### 1. 一键安装（推荐）
+
+在终端中执行 DeepSeek Harness 官方插件安装命令：
+
+```bash
+# 如果已全局安装 dsh CLI
+dsh plugin --profile web add "github:aa2246740/dsh-skillhub#v1.0.0"
+
+# 或者使用 npx
+npx @deepseek-ai/dsh plugin --profile web add "github:aa2246740/dsh-skillhub#v1.0.0"
 ```
 
-或本地 clone：
+### 2. 重启生效
 
-```sh
-git clone https://github.com/aa2246740/dsh-skillhub.git
-dsh plugin --profile web add ./dsh-skillhub
+安装完成后，**重启你的 DeepSeek Harness 服务**即可加载插件：
+
+```bash
+dsh web
 ```
 
-```sh
+> **提示**：DeepSeek Harness 在系统启动时编排插件树，因此安装新插件后重启服务即可在**系统设置**及**对话输入框**中看到技能与 MCP 面板。
+
+---
+
+## 📖 使用说明
+
+### 1. 全局管理（设置页）
+打开 DSH **设置** → 找到 **`skill&mcp`** 页面：
+- 浏览本机所有已安装的技能与 MCP 服务。
+- 支持单个开关、文件夹/分组批量开关，以及右上角「全部开启 / 全部关闭」。
+- 全局调整将作为所有项目与会话的默认生效值。
+
+### 2. 项目与会话即时调控（输入框上方）
+在对话输入框上方点击 **「技能」** 胶囊按钮：
+- 弹出轻量快捷面板，自由切换 **「本对话」** 与 **「本项目」**。
+- 支持快捷搜索技能、一键复制 `/<skill-name>` 命令。
+- 切换无闪烁，调整后模型下一次回复立即按新配置生效。
+
+---
+
+## ⚙️ 开关传导规则
+
+| 操作层级 | 影响范围 | 说明 |
+|---|---|---|
+| **全局 (Global)** | 全局 + 所有项目 + 所有对话 | 统一设定基准，覆盖旧选项（重复设同值也同步） |
+| **本项目 (Project)** | 当前项目 + 该项目下所有对话 | 仅作用于本项目，不影响其他项目及其会话 |
+| **本对话 (Chat)** | 仅当前对话 | 临时调整，不影响其他会话 |
+| **新建继承** | 自动向下继承 | 新建项目继承全局状态；新开会话继承所属项目状态 |
+
+---
+
+## 🔄 升级与卸载
+
+### 更新至最新版本
+
+```bash
+dsh plugin --profile web add "github:aa2246740/dsh-skillhub#v1.0.0"
+```
+
+### 卸载插件
+
+```bash
 dsh plugin --profile web remove dsh-skillhub
 ```
 
-面向官方 DeepSeek Harness **0.1.5-rc.2** 的 web profile。DSH.app 的插件窗口只收 npm 包名；桌面用户请用 `dsh web` 再跑上面这条。
+---
 
-它不安装、不复制、不删除 skill 文件。关掉只是不进目录，文件夹还在。SkillHub 只管理磁盘技能。插件自己注册的技能（含 Resume 斜杠命令）仍由插件控制：SkillHub 不列出、不遮蔽、也不改它们的调用权限。
+## ❓ 常见问题
 
-词表见 [`CONTEXT.md`](CONTEXT.md)。决策见 [`docs/adr/`](docs/adr/)。
+<details>
+<summary><b>Q: 安装后刷新页面没有出现插件功能？</b></summary>
 
-## 本机数据
+A: DSH 插件在服务启动时编排 Context 树。请在运行 DSH 的终端按 `Ctrl + C` 停止，然后重新运行 `dsh web` 启动即可。
+</details>
 
-| 内容 | 位置 |
-|---|---|
-| Installed Skills | `~/.agents/skills`, `$DSH_HOME/skills` |
-| 可见性文档 | `$DSH_HOME/skillhub/`（`global.json`, `projects/<hash>.json`, `sessions/<id>.json`；MCP 另存 `mcp-*.json`） |
+<details>
+<summary><b>Q: 为什么开启了某个 Skill，输入框输入 <code>/</code> 没有立刻补全？</b></summary>
 
-项目可见性按本机文件夹哈希。不会写进 git 仓库。生效顺序是 Chat → Project → Global。Project 和 Chat 只存覆盖，父层改了，还在跟随的子孙立刻跟上。
+A: DSH 的斜杠命令目录在前端页面生命周期内缓存，开启后只需刷新一次浏览器页面（Cmd+R / F5），新的技能命令就会出现在补全列表中；而模型端下一次对话直接生效。
+</details>
 
-可见性文档是 version 2：一层默认值，再加每条 Skill 的覆盖。关掉一项不会改未点名或以后新加技能的默认值。Global「全部关闭」也会罩住以后新加的磁盘 Skill，但不覆盖插件命令。旧 Session 快照保持显式，直到用户选 **恢复默认**。
+<details>
+<summary><b>Q: 关闭某个 Skill 后，为什么当前会话模型似乎还记得？</b></summary>
 
-不要提交 `$DSH_HOME/skillhub/`、`.env`。仓库里的 `lib/` 是便携产物，不含本机绝对路径。
+A: 关闭技能会立刻阻止后续向模型提供该技能的定义，但如果此前该技能的内容已经被读取进当前对话的上下文历史中，该轮会话中已读内容不会被篡改。新开一个会话即可彻底清空。
+</details>
 
-## MCP 可见性
+---
 
-面板分成「技能」和「MCP」两个独立页。按服务控制后续请求里模型能看到的 MCP 工具，进程继续跑，已有对话上下文不会撤回。当前 DSH MCP 客户端只暴露工具，没有资源/提示词目录。命名冲突或作用域本地注册的服务会标成不支持隐藏，不会假装已经藏干净。用服务开关或「恢复」即可还原。
+## 📄 License
 
-Host HTTP 是 `/skillhub/catalog`。官方 `/plugins` 前缀只服务 client bundle，不要让它接管这个 API。
-
-在 Web 上关掉 preset 里的 `skill-filesystem` 行，项目 skill 文件夹才会保持惰性。`dsh-web-app` 里的 host `skill-filesystem` 行已经关掉。
-
-## 许可
-
-MIT。见 [LICENSE](LICENSE)。
+MIT © [aa2246740](https://github.com/aa2246740)

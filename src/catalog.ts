@@ -1,3 +1,4 @@
+import { propagatedGate, type PropagationMetadata } from './propagation.ts'
 import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync } from 'node:fs'
 import { basename, dirname, join, posix, relative, sep } from 'node:path'
 
@@ -17,7 +18,7 @@ export type AbsolutePath = string
 export type SkillId = string & { readonly __brand: 'SkillId' }
 export type PackId = string & { readonly __brand: 'PackId' }
 
-export type VisibilityDocument = {
+export type VisibilityDocument = PropagationMetadata & {
   readonly version: 2
   readonly default: LayerGate
   readonly gates: Readonly<Record<string, LayerGate>>
@@ -62,6 +63,7 @@ export type BrokenReason =
   | { readonly kind: 'unreadable-skill'; readonly message: string }
   | { readonly kind: 'invalid-frontmatter'; readonly message: string }
   | { readonly kind: 'invalid-name'; readonly raw: string }
+  | { readonly kind: 'symlink-cycle'; readonly target: string }
   | { readonly kind: 'empty-pack' }
 
 export interface BrokenEntry {
@@ -165,6 +167,13 @@ export interface Catalog {
   readonly collisions: readonly Collision[]
   readonly broken: readonly BrokenEntry[]
   readonly layer?: VisibilityLayer
+  /**
+   * True when gates were resolved through the whole inheritance chain (Global,
+   * then Project, then Chat). `layer` still names the layer whose document the
+   * user is editing while each entry's `source` names the layer that actually
+   * decided its gate, so an inherited override stays attributable.
+   */
+  readonly resolved?: boolean
   readonly legacySessionSnapshot?: boolean
 }
 
@@ -174,6 +183,13 @@ export interface ResolveInput {
   readonly global?: VisibilityDocument
   readonly project?: VisibilityDocument
   readonly session?: VisibilityDocument
+  /**
+   * Fold Project and Chat into the Global document first, so every leaf reports
+   * the gate the runtime would enforce no matter which layer the reader is
+   * editing. Without it the layers stay separate and `gateStateOf` already
+   * lets a deeper layer win on top of the global default.
+   */
+  readonly composeChain?: boolean
 }
 
 type ParsedSkill = {
@@ -236,6 +252,11 @@ function parseSkillFile(path: string): ParsedSkill | { error: BrokenReason } {
   if (name === '' || description === '') {
     return { error: { kind: 'invalid-frontmatter', message: 'name and description are required' } }
   }
+  // A name the host cannot address makes the skill invisible to inventory, so
+  // surface it as a broken row instead of silently dropping it from the tree.
+  if (!isHostSkillName(name)) {
+    return { error: { kind: 'invalid-name', raw: name } }
+  }
   const disableModel = parsed.fields['disable-model-invocation']
   const userInvocableField = parsed.fields['user-invocable']
   return {
@@ -256,25 +277,62 @@ function listEntries(dir: string): string[] {
   }
 }
 
-function applyVisibility(
-  id: SkillId,
-  document: VisibilityDocument | undefined,
-  source: VisibilityLayer,
-  fallback: { gate: Gate; source: VisibilityLayer },
-): { gate: Gate; source: VisibilityLayer } {
-  if (document === undefined) return fallback
-  const value = document.gates[id] ?? document.default
-  if (value === 'inherit') return fallback
-  return { gate: value, source }
+/** Absolute recursion bound for the directory walk; symlink cycles bail earlier. */
+const MAX_WALK_DEPTH = 12
+
+/** Canonical path for cycle detection, tolerating realpath failures. */
+function dirRealpath(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
+}
+
+/** Best-effort target label for a symlink-cycle broken reason. */
+function cycleTarget(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch { /* fall through */ }
+  try {
+    return readlinkSync(path)
+  } catch { /* fall through */ }
+  return path
+}
+
+function propagatedSkill(id: string | undefined, input: ResolveInput): { gate: Gate; source: VisibilityLayer } {
+  return propagatedGate(id, [
+    ['global', input.global], ['project', input.project], ['session', input.session],
+  ])
+}
+
+/**
+ * The result of composing the layer chain: the folded document, the map of
+ * which layer decided each explicit id, and the layer that supplied the
+ * composed default — the honest fallback attribution for unlisted rows.
+ */
+interface ComposedChain {
+  readonly document: VisibilityDocument
+  readonly decided: ReadonlyMap<string, VisibilityLayer>
+  readonly defaultSource: VisibilityLayer
 }
 
 function gateStateOf(
   id: SkillId,
   input: ResolveInput,
+  composed?: ComposedChain,
 ): { gate: Gate; source: VisibilityLayer } {
-  const global = applyVisibility(id, input.global, 'global', { gate: 'on', source: 'global' })
-  const project = applyVisibility(id, input.project, 'project', global)
-  return applyVisibility(id, input.session, 'session', project)
+  // A composed document already folded the deeper layers into its global row, so
+  // re-applying them would let a Chat or Project doc override the composition
+  // and, worse, re-label the value as the wrong layer. The decision map is the
+  // authority there; without composition the three documents are still separate.
+  if (composed !== undefined) {
+    return {
+      gate: (input.global?.gates[id] ?? input.global?.default ?? 'on') === 'on' ? 'on' : 'off',
+      source: composed.decided.get(id) ?? composed.defaultSource,
+    }
+  }
+  return propagatedSkill(id, input)
 }
 
 function combineGates(gates: Gate[]): GroupGate {
@@ -297,8 +355,13 @@ function walkGroup(
   dir: string,
   leaves: Leaf[],
   broken: BrokenEntry[],
+  ancestors: readonly string[],
+  depth: number,
 ): FolderChild {
   const rel = posixRel(homeRoot, dir)
+  // This directory's canonical path joins the ancestor chain, so a child that
+  // resolves onto it (or any earlier ancestor) is a symlink cycle.
+  const chain = [...ancestors, dirRealpath(dir)]
   const skillPath = join(dir, 'SKILL.md')
   let skill: SkillNode | null = null
   if (existsSync(skillPath) && lstatSync(skillPath).isFile()) {
@@ -356,7 +419,16 @@ function walkGroup(
         continue
       }
       if (!lstatSync(child).isDirectory() && !existsSync(join(child, 'SKILL.md'))) continue
-      children.push(walkGroup(home, homeRoot, child, leaves, broken))
+      // A child directory (usually through a symlink) that resolves onto a
+      // directory already on this walk's path would recurse forever; the
+      // depth cap additionally bounds graphs realpath cannot untangle.
+      if (chain.includes(dirRealpath(child)) || depth >= MAX_WALK_DEPTH) {
+        const reason: BrokenReason = { kind: 'symlink-cycle', target: cycleTarget(child) }
+        broken.push({ home, path: child, reason })
+        children.push({ kind: 'broken', home, name, path: child, reason })
+        continue
+      }
+      children.push(walkGroup(home, homeRoot, child, leaves, broken, chain, depth + 1))
     }
   }
   const node: GroupNode = {
@@ -376,6 +448,9 @@ function walkHome(home: HomeKind, homeRoot: string, leaves: Leaf[], broken: Brok
   if (!existsSync(homeRoot)) {
     return []
   }
+  // The home root itself is the first ancestor on the recursion path, so a
+  // top-level pack symlinked back at the root is caught as a cycle too.
+  const ancestors = [dirRealpath(homeRoot)]
   const children: CatalogNode[] = []
   for (const name of listEntries(homeRoot).sort()) {
     if (IGNORE.has(name)) continue
@@ -439,7 +514,7 @@ function walkHome(home: HomeKind, homeRoot: string, leaves: Leaf[], broken: Brok
         try { target = readlinkSync(path) } catch { /* keep path */ }
         link = { kind: 'symlink', target }
       }
-      const walked = walkGroup(home, homeRoot, path, leaves, broken)
+      const walked = walkGroup(home, homeRoot, path, leaves, broken, ancestors, 1)
       if (walked.kind === 'broken') {
         children.push(walked)
         continue
@@ -474,14 +549,20 @@ function applyGatesToTree(
   nodes: readonly CatalogNode[],
   collisions: ReadonlySet<string>,
   input: ResolveInput,
+  composed?: ComposedChain,
 ): CatalogNode[] {
-  return nodes.map(node => applyGatesToNode(node, collisions, input))
+  return nodes.map(node => applyGatesToNode(node, collisions, input, composed))
 }
 
-function applyGatesToNode(node: CatalogNode, collisions: ReadonlySet<string>, input: ResolveInput): CatalogNode {
+function applyGatesToNode(
+  node: CatalogNode,
+  collisions: ReadonlySet<string>,
+  input: ResolveInput,
+  composed?: ComposedChain,
+): CatalogNode {
   if (node.kind === 'broken') return node
   if (node.kind === 'root-skill') {
-    const state = gateStateOf(node.id, input)
+    const state = gateStateOf(node.id, input, composed)
     return {
       ...node,
       ...state,
@@ -490,7 +571,7 @@ function applyGatesToNode(node: CatalogNode, collisions: ReadonlySet<string>, in
   }
   const skill = node.skill === null ? null : {
     ...node.skill,
-    ...gateStateOf(node.skill.id, input),
+    ...gateStateOf(node.skill.id, input, composed),
     collision: collisions.has(node.skill.id),
   }
   const children = node.children.map(child => {
@@ -499,6 +580,7 @@ function applyGatesToNode(node: CatalogNode, collisions: ReadonlySet<string>, in
       { ...child, kind: 'pack', id: packId(child.home, child.name), link: { kind: 'directory' } },
       collisions,
       input,
+      composed,
     )
     if (next.kind !== 'pack') return child
     const group: GroupNode = {
@@ -522,11 +604,37 @@ function applyGatesToNode(node: CatalogNode, collisions: ReadonlySet<string>, in
   return { ...pack, gate: combineGates(collectGates(pack)) }
 }
 
+const emptyGateMap: Readonly<Record<string, LayerGate>> = {}
+
+/**
+ * Compose Global→Project→Chat into one document so a read at any layer reports
+ * the gate the runtime enforces, while still naming the layer that decided each
+ * value. Layer documents keep returning `LayerGate` values because the writer
+ * still needs honest 'inherit' bookkeeping; a composed document loses it, which
+ * is exactly the point: after folding, every id maps to the layer that won it.
+ * @param input - the layers a query loaded.
+ * @returns the composed document plus a decision map from skill id to layer.
+ */
+function composeChain(input: ResolveInput): ComposedChain {
+  const fallback = propagatedSkill(undefined, input)
+  const ids = new Set([input.global, input.project, input.session].flatMap(doc => Object.keys(doc?.gates ?? {})))
+  const gates: Record<string, LayerGate> = Object.create(null) as Record<string, LayerGate>
+  const decided = new Map<string, VisibilityLayer>()
+  for (const id of ids) {
+    const state = propagatedSkill(id, input)
+    gates[id] = state.gate
+    decided.set(id, state.source)
+  }
+  return { document: { version: 2, default: fallback.gate, gates }, decided, defaultSource: fallback.source }
+}
+
 export function resolveCatalog(input: ResolveInput): Catalog {
+  const composed = input.composeChain === true ? composeChain(input) : undefined
+  const source = composed === undefined ? input : { ...input, global: composed.document }
   const leaves: Leaf[] = []
   const broken: BrokenEntry[] = []
-  const agentChildren = walkHome('agent', input.agentHome, leaves, broken)
-  const dshChildren = walkHome('dsh', input.dshHome, leaves, broken)
+  const agentChildren = walkHome('agent', source.agentHome, leaves, broken)
+  const dshChildren = walkHome('dsh', source.dshHome, leaves, broken)
 
   const byName = new Map<string, SkillId[]>()
   for (const leaf of leaves) {
@@ -546,21 +654,21 @@ export function resolveCatalog(input: ResolveInput): Catalog {
     {
       kind: 'home',
       home: 'agent',
-      path: input.agentHome,
-      children: applyGatesToTree(agentChildren, collisionIds, input),
+      path: source.agentHome,
+      children: applyGatesToTree(agentChildren, collisionIds, source, composed),
     },
     {
       kind: 'home',
       home: 'dsh',
-      path: input.dshHome,
-      children: applyGatesToTree(dshChildren, collisionIds, input),
+      path: source.dshHome,
+      children: applyGatesToTree(dshChildren, collisionIds, source, composed),
     },
   ]
 
   const inventory: ManagedSkill[] = []
   for (const leaf of leaves) {
     if (!isHostSkillName(leaf.parsed.name)) continue
-    const state = gateStateOf(leaf.id, input)
+    const state = gateStateOf(leaf.id, source, composed)
     const gate = state.gate
     const invocable = gate === 'on'
     inventory.push({
@@ -589,7 +697,6 @@ export function resolveCatalog(input: ResolveInput): Catalog {
     broken,
   }
 }
-
 function resolvedPath(path: string): string | undefined {
   try {
     if (!existsSync(path)) return undefined

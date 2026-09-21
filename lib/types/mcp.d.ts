@@ -1,7 +1,8 @@
+import { type PropagationMetadata } from './propagation.ts';
 export type McpLayer = 'global' | 'project' | 'session';
 export type McpGate = 'on' | 'off';
 export type McpLayerGate = McpGate | 'inherit';
-export interface McpVisibilityDocument {
+export interface McpVisibilityDocument extends PropagationMetadata {
     readonly version: 2;
     readonly default: McpLayerGate;
     readonly gates: Readonly<Record<string, McpLayerGate>>;
@@ -75,6 +76,22 @@ export declare class McpHub {
         source: McpLayer;
     };
     hiddenServers(sessionId?: string, folder?: string, servers?: readonly string[]): Set<string>;
+    /**
+     * Resolve one server through the complete inheritance chain, whichever layer
+     * is being edited. The panel's display and the runtime's enforce/guard path
+     * must read the same value: a Project or Chat override has to change what the
+     * panel shows, because it already changes what the model may call. A layer
+     * that is not part of the query simply restricts nothing: reading `global`
+     * reports the global default alone (no folder was chosen, so no Project row
+     * can apply), `project` composes Global→Project, and `session` composes
+     * Global→Project→Chat.
+     * @param name - MCP server name.
+     * @param layer - the layer being edited or observed.
+     * @param sessionId - chat whose Chat document participates (session layer only).
+     * @param folder - normalized workspace folder whose Project document participates.
+     * @returns the effective gate plus the layer that decided it.
+     */
+    private gateState;
     catalog(query?: McpCatalogQuery, toolNames?: readonly string[], servers?: readonly string[]): {
         servers: McpServerView[];
         layer: McpLayer;

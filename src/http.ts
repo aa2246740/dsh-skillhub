@@ -16,6 +16,7 @@ function clientCatalog(catalog: Catalog) {
     collisions: catalog.collisions,
     broken: catalog.broken,
     layer: catalog.layer,
+    resolved: catalog.resolved === true,
     legacySessionSnapshot: catalog.legacySessionSnapshot === true,
   }
 }
@@ -29,11 +30,24 @@ function send(res: ServerResponse, status: number, body: unknown): void {
   res.end(text)
 }
 
+const MAX_BODY_BYTES = 1024 * 1024
+
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = []
-  for await (const chunk of req) chunks.push(chunk as Buffer)
+  let bytes = 0
+  for await (const chunk of req) {
+    bytes += (chunk as Buffer).length
+    // Abruptly leaving the async iterator destroys the request stream.
+    if (bytes > MAX_BODY_BYTES) throw new Error('invalid JSON: request body exceeds 1 MiB')
+    chunks.push(chunk as Buffer)
+  }
   if (chunks.length === 0) return {}
-  const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  } catch {
+    throw new Error('invalid JSON body')
+  }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
   return parsed as Record<string, unknown>
 }
@@ -42,7 +56,13 @@ function isLayerName(value: string | null): value is LayerName {
   return value === 'global' || value === 'project' || value === 'session'
 }
 
-function query(url: URL): { sessionId?: string; folder?: string; layer?: LayerName } {
+/**
+ * Read one catalog request. Every surface that displays a gate must see the
+ * same value the model runs with, so the whole Panel chain is resolved through
+ * Global→Project→Chat; a raw layer-only read is opt-in for callers that
+ * explicitly want the layer document itself.
+ */
+function query(url: URL): { sessionId?: string; folder?: string; layer?: LayerName; resolved: boolean } {
   const sessionId = url.searchParams.get('sessionId') ?? undefined
   const folder = url.searchParams.get('folder') ?? undefined
   const layer = url.searchParams.get('layer')
@@ -50,6 +70,7 @@ function query(url: URL): { sessionId?: string; folder?: string; layer?: LayerNa
     ...sessionId !== undefined && sessionId !== '' ? { sessionId } : {},
     ...folder !== undefined && folder !== '' ? { folder } : {},
     ...isLayerName(layer) ? { layer } : {},
+    resolved: url.searchParams.get('raw') !== '1',
   }
 }
 
@@ -149,9 +170,9 @@ export function handleSkillHubHttp(
         } = { layer, target: toggleTarget(body) }
         if (typeof body['sessionId'] === 'string') toggle.sessionId = body['sessionId']
         if (typeof body['folder'] === 'string') toggle.folder = body['folder']
-        const catalog = hub.toggle(toggle)
+        hub.toggle(toggle)
         invalidate()
-        send(res, 200, clientCatalog(catalog))
+        send(res, 200, clientCatalog(hub.displayedCatalog(layer, toggle.folder, toggle.sessionId)))
         return
       }
       if (path === '/inherit') {
@@ -168,9 +189,9 @@ export function handleSkillHubHttp(
         } = { layer, target: visibilityTarget(body) }
         if (typeof body['sessionId'] === 'string') request.sessionId = body['sessionId']
         if (typeof body['folder'] === 'string') request.folder = body['folder']
-        const catalog = hub.inherit(request)
+        hub.inherit(request)
         invalidate()
-        send(res, 200, clientCatalog(catalog))
+        send(res, 200, clientCatalog(hub.displayedCatalog(layer, request.folder, request.sessionId)))
         return
       }
       if (path === '/reset') {
@@ -178,12 +199,10 @@ export function handleSkillHubHttp(
           send(res, 400, { error: 'sessionId required' })
           return
         }
-        const catalog = hub.resetSession(
-          body['sessionId'],
-          typeof body['folder'] === 'string' ? body['folder'] : undefined,
-        )
+        const folder = typeof body['folder'] === 'string' ? body['folder'] : undefined
+        hub.resetSession(body['sessionId'], folder)
         invalidate()
-        send(res, 200, clientCatalog(catalog))
+        send(res, 200, clientCatalog(hub.displayedCatalog('session', folder, body['sessionId'])))
         return
       }
       if (path === '/install') {
@@ -198,7 +217,13 @@ export function handleSkillHubHttp(
       }
       send(res, 404, { error: 'not found' })
     } catch (error) {
-      send(res, 400, { error: String(error) })
+      // Client-input problems answer 400. Everything else — including a
+      // corrupted or unsupported visibility document surfaced by the hub's
+      // readDoc/writeDoc paths — is an internal failure and answers 500.
+      const message = String(error)
+      const client = !/visibility document/i.test(message)
+        && /required|invalid|must be|no longer registered|Cannot fully hide/i.test(message)
+      send(res, client ? 400 : 500, { error: message })
     }
   }
 }

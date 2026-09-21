@@ -186,8 +186,11 @@ test('Global, Project, and Chat form an inheritance chain with explicit override
     folder,
     target: { kind: 'skill', id },
   })
-  assert.deepEqual(session.offered.map(skill => skill.name), ['ask-matt'])
-  assert.equal(session.inventory[0].source, 'project')
+  // A mutation reports the layer document it just wrote ...
+  assert.deepEqual(hub.layerCatalog('session', folder, sessionId).offered, [])
+  // ... while the effective view the model and the panels read follows Project.
+  assert.deepEqual(hub.displayedCatalog('session', folder, sessionId).offered.map(skill => skill.name), ['ask-matt'])
+  assert.equal(hub.displayedCatalog('session', folder, sessionId).inventory[0].source, 'project')
 
   session = hub.inherit({
     layer: 'project',
@@ -196,6 +199,57 @@ test('Global, Project, and Chat form an inheritance chain with explicit override
   })
   assert.deepEqual(session.offered, [])
   assert.equal(session.inventory[0].source, 'global')
+})
+
+test('a resolved read reports the effective gate at every layer', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skillhub-hub-'))
+  const agent = join(root, 'agent')
+  const dsh = join(root, 'dsh')
+  const folder = join(root, 'project')
+  await skillFile(join(agent, 'ask-matt'), 'ask-matt')
+  await mkdir(dsh, { recursive: true })
+  await mkdir(folder, { recursive: true })
+  const hub = new SkillHub({ agentHome: agent, dshHome: dsh, storeDir: join(root, 'store') })
+  const sessionId = 'session-resolved'
+  const id = skillId('agent', 'ask-matt/SKILL.md')
+  const gate = catalog => catalog.inventory.find(skill => skill.id === id)
+
+  // Nothing decided yet: every layer-read still reports the global default.
+  const plain = hub.catalog({ layer: 'global' })
+  const resolved = hub.catalog({ layer: 'global', resolved: true })
+  assert.equal(plain.resolved, undefined)
+  assert.equal(resolved.resolved, true)
+  assert.equal(gate(resolved).gate, 'on')
+
+  // A Project override decides the value even when the global switch says off.
+  hub.toggle({ layer: 'global', target: { kind: 'skill', id, on: false } })
+  hub.toggle({ layer: 'project', folder, target: { kind: 'skill', id, on: true } })
+  assert.equal(gate(hub.catalog({ layer: 'global' })).gate, 'off')
+  assert.deepEqual(
+    [gate(hub.catalog({ layer: 'project', folder, resolved: true })).gate,
+      gate(hub.catalog({ layer: 'project', folder, resolved: true })).source],
+    ['on', 'project'],
+  )
+  assert.deepEqual(
+    [gate(hub.catalog({ layer: 'session', sessionId, folder, resolved: true })).gate,
+      gate(hub.catalog({ layer: 'session', sessionId, folder, resolved: true })).source],
+    ['on', 'project'],
+  )
+  // Handing the decision back to Global leaves the global default in force.
+  hub.inherit({ layer: 'project', folder, target: { kind: 'skill', id } })
+  assert.deepEqual(
+    [gate(hub.catalog({ layer: 'session', sessionId, folder, resolved: true })).gate,
+      gate(hub.catalog({ layer: 'session', sessionId, folder, resolved: true })).source],
+    ['off', 'global'],
+  )
+
+  // A Chat override still beats both parents.
+  hub.toggle({ layer: 'session', sessionId, folder, target: { kind: 'skill', id, on: true } })
+  const chat = hub.catalog({ layer: 'session', sessionId, folder, resolved: true })
+  assert.deepEqual([gate(chat).gate, gate(chat).source], ['on', 'session'])
+  // An unauthenticated layer cannot invent a folder or session.
+  assert.throws(() => hub.catalog({ layer: 'project', resolved: true }), /folder required/)
+  assert.throws(() => hub.catalog({ layer: 'session', resolved: true }), /sessionId required/)
 })
 
 test('Global All off also covers Skills added later', async () => {
@@ -353,4 +407,73 @@ test('leaf toggle does not turn off siblings', async () => {
     target: { kind: 'skill', id: skillId('agent', 'writing/essays/SKILL.md'), on: false },
   })
   assert.deepEqual(after.offered.map(skill => skill.name), ['drafts'])
+})
+
+test('a legacy v1 Chat document flags the snapshot on a resolved read', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skillhub-hub-'))
+  const agent = join(root, 'agent')
+  const dsh = join(root, 'dsh')
+  const store = join(root, 'store')
+  const folder = join(root, 'project')
+  const sessionId = 'legacy-resolved-chat'
+  const id = skillId('agent', 'ask-matt/SKILL.md')
+  await skillFile(join(agent, 'ask-matt'), 'ask-matt')
+  await mkdir(dsh, { recursive: true })
+  await mkdir(folder, { recursive: true })
+  await mkdir(join(store, 'sessions'), { recursive: true })
+  await writeFile(join(store, 'sessions', `${sessionId}.json`), JSON.stringify({ gates: { [id]: 'off' } }))
+  const hub = new SkillHub({ agentHome: agent, dshHome: dsh, storeDir: store })
+  const session = hub.catalog({ layer: 'session', sessionId, folder, resolved: true })
+  assert.equal(session.resolved, true)
+  assert.equal(session.legacySessionSnapshot, true)
+  assert.equal(session.inventory.find(skill => skill.id === id).gate, 'off')
+  assert.equal(session.inventory.find(skill => skill.id === id).source, 'session')
+})
+
+test('a resolved Global read does not borrow attribution from another scope', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skillhub-hub-'))
+  const agent = join(root, 'agent')
+  const dsh = join(root, 'dsh')
+  const folder = join(root, 'project')
+  const id = skillId('agent', 'ask-matt/SKILL.md')
+  await skillFile(join(agent, 'ask-matt'), 'ask-matt')
+  await mkdir(dsh, { recursive: true })
+  await mkdir(folder, { recursive: true })
+  const hub = new SkillHub({ agentHome: agent, dshHome: dsh, storeDir: join(root, 'store') })
+  hub.toggle({ layer: 'global', target: { kind: 'skill', id, on: false } })
+  hub.toggle({ layer: 'project', folder, target: { kind: 'skill', id, on: true } })
+  const row = hub.catalog({ layer: 'global', resolved: true }).inventory.find(skill => skill.id === id)
+  assert.equal(row.gate, 'off')
+  assert.equal(row.source, 'global')
+})
+
+test('a resolved Global read ignores unrelated Project and Chat settings', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skillhub-hub-'))
+  const agent = join(root, 'agent')
+  const dsh = join(root, 'dsh')
+  const folder = join(root, 'project')
+  const sessionId = 'marker-session'
+  const id = skillId('agent', 'ask-matt/SKILL.md')
+  await skillFile(join(agent, 'ask-matt'), 'ask-matt')
+  await mkdir(dsh, { recursive: true })
+  await mkdir(folder, { recursive: true })
+  const hub = new SkillHub({ agentHome: agent, dshHome: dsh, storeDir: join(root, 'store') })
+  hub.toggle({ layer: 'global', target: { kind: 'skill', id, on: false } })
+  hub.toggle({ layer: 'project', folder, target: { kind: 'skill', id, on: true } })
+  hub.toggle({ layer: 'session', sessionId, folder, target: { kind: 'skill', id, on: true } })
+  const row = hub.catalog({ layer: 'global', resolved: true }).inventory.find(skill => skill.id === id)
+  assert.equal(row.gate, 'off')
+  assert.equal(row.source, 'global')
+})
+
+test('install rejects a source directory that does not exist', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skillhub-hub-'))
+  const agent = join(root, 'agent')
+  const dsh = join(root, 'dsh')
+  await mkdir(agent, { recursive: true })
+  await mkdir(dsh, { recursive: true })
+  const hub = new SkillHub({ agentHome: agent, dshHome: dsh, storeDir: join(root, 'store') })
+  assert.throws(() => hub.install(join(root, 'no-such-pack'), 'agent'), /does not exist/)
+  await skillFile(join(root, 'not-a-dir'), 'file-pack')
+  assert.throws(() => hub.install(join(root, 'not-a-dir', 'SKILL.md'), 'agent'), /not a directory/)
 })

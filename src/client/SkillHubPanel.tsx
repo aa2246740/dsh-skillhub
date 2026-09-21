@@ -1,175 +1,101 @@
-import { McpPanel } from './McpPanel.tsx'
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { McpPanel, type McpBulkActions } from './McpPanel.tsx'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
-  Button,
-  IconChevronRightOutline14,
-  IconCordisPluginOutline14,
-  IconSearchOutline16,
-  IconSkillOutline16,
-  IconWarningOutline16,
-  Input,
+  Button, IconChevronRightOutline14, IconCordisPluginOutline14, IconEllipsisOutline16,
+  IconSearchOutline16, IconSkillOutline16, IconWarningOutline16, Input, Menu, Pill,
+  Tag, Toast, Tooltip, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
-import type {
-  CatalogNode,
-  CatalogPayload,
-  Gate,
-  GroupChild,
-  GroupGate,
-  HomeKind,
-  LayerName,
-  SkillRef,
-} from './catalog-api.ts'
+import type { CatalogNode, CatalogPayload, Gate, GroupChild, GroupGate, HomeKind, LayerName, SkillRef } from './catalog-api.ts'
 import { fetchCatalog, postCatalog } from './catalog-api.ts'
 import type { SkillHubKey } from './locales.ts'
 import css from './SkillHubPanel.module.css'
 
 export type SkillHubSurface = 'page' | 'popover'
-
 type Copy = Translate<SkillHubKey>
-
-export function layerHelp(t: Copy, layer: LayerName): string {
-  if (layer === 'session') return t('help.session')
-  if (layer === 'project') return t('help.project')
-  return t('help.global')
-}
-
+type Node = CatalogNode | GroupChild
 export function layerLabel(t: Copy, layer: LayerName): string {
-  if (layer === 'session') return t('layer.session')
-  if (layer === 'project') return t('layer.project')
-  return t('layer.global')
+  return t(layer === 'session' ? 'layer.session' : layer === 'project' ? 'layer.project' : 'layer.global')
 }
-
-export function sourceLabel(t: Copy, source: LayerName): string {
-  if (source === 'session') return t('source.session')
-  if (source === 'project') return t('source.project')
-  return t('source.global')
-}
-
 export function gateWord(t: Copy, gate: Gate | GroupGate): string {
-  if (gate === 'on') return t('gate.on')
-  if (gate === 'off') return t('gate.off')
-  return t('gate.mixed')
+  return t(gate === 'on' ? 'gate.on' : gate === 'off' ? 'gate.off' : 'gate.mixed')
 }
-
-function brokenCopy(t: Copy, reason: { kind: string; target?: string; message?: string; raw?: string }): string {
-  if (reason.kind === 'missing-symlink-target') {
-    return reason.target === undefined ? t('broken.missing') : t('broken.missingNamed', { target: reason.target })
+const CHANGED_EVENT = 'dsh-skillhub:changed'
+export function notifyCatalogChanged(layer: LayerName): void {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent<LayerName>(CHANGED_EVENT, { detail: layer }))
+  if (typeof BroadcastChannel !== 'undefined') {
+    const channel = new BroadcastChannel(CHANGED_EVENT)
+    channel.postMessage(layer)
+    channel.close()
   }
+}
+/** Keep mounted panels current, including other tabs and focused windows. */
+export function useCatalogRefresh(reload: () => void | (() => void) | Promise<void>): void {
+  const latest = useRef(reload)
+  latest.current = reload
+  useEffect(() => {
+    let cleanup: (() => void) | undefined
+    const changed = () => {
+      cleanup?.()
+      const next = latest.current()
+      cleanup = typeof next === 'function' ? next : undefined
+    }
+    const visible = () => { if (document.visibilityState === 'visible') changed() }
+    const channel = typeof BroadcastChannel === 'undefined' ? undefined : new BroadcastChannel(CHANGED_EVENT)
+    if (channel) channel.onmessage = changed
+    window.addEventListener(CHANGED_EVENT, changed)
+    window.addEventListener('focus', visible)
+    document.addEventListener('visibilitychange', visible)
+    return () => {
+      channel?.close()
+      window.removeEventListener(CHANGED_EVENT, changed)
+      window.removeEventListener('focus', visible)
+      document.removeEventListener('visibilitychange', visible)
+      cleanup?.()
+    }
+  }, [])
+}
+function brokenCopy(t: Copy, reason: { kind: string; target?: string }): string {
+  if (reason.kind === 'missing-symlink-target') return reason.target === undefined ? t('broken.missing') : t('broken.missingNamed', { target: reason.target })
   if (reason.kind === 'empty-pack') return t('broken.empty')
   if (reason.kind === 'invalid-name') return t('broken.name')
   if (reason.kind === 'unreadable-skill') return t('broken.unreadable')
   if (reason.kind === 'invalid-frontmatter') return t('broken.frontmatter')
+  if (reason.kind === 'symlink-cycle') return t('broken.cycle')
   return reason.kind
 }
-
-function homeLabel(t: Copy, home: HomeKind): string {
-  if (home === 'agent') return t('home.agent')
-  return t('home.dsh')
-}
-
-function countSkills(nodes: readonly (CatalogNode | GroupChild)[]): { on: number; off: number } {
-  let on = 0
-  let off = 0
-  const visit = (list: readonly (CatalogNode | GroupChild)[]) => {
-    for (const node of list) {
-      if (node.kind === 'broken') continue
-      if (node.kind === 'root-skill') {
-        if (node.gate === 'on') on += 1
-        else off += 1
-        continue
-      }
-      if (node.skill !== null) {
-        if (node.skill.gate === 'on') on += 1
-        else off += 1
-      }
-      visit(node.children)
-    }
-  }
-  visit(nodes)
-  return { on, off }
-}
-
-function gateFromCounts(counts: { on: number; off: number }): GroupGate {
-  if (counts.on > 0 && counts.off > 0) return 'mixed'
-  return counts.on > 0 ? 'on' : 'off'
-}
-
-function collectSkillIds(nodes: readonly (CatalogNode | GroupChild)[]): string[] {
-  const ids: string[] = []
-  const visit = (list: readonly (CatalogNode | GroupChild)[]) => {
-    for (const node of list) {
-      if (node.kind === 'broken') continue
-      if (node.kind === 'root-skill') {
-        ids.push(node.id)
-        continue
-      }
-      if (node.skill !== null) ids.push(node.skill.id)
-      visit(node.children)
-    }
-  }
-  visit(nodes)
-  return ids
-}
-
-function collectSkills(nodes: readonly (CatalogNode | GroupChild)[]): SkillRef[] {
-  const skills: SkillRef[] = []
-  const visit = (list: readonly (CatalogNode | GroupChild)[]) => {
-    for (const node of list) {
-      if (node.kind === 'broken') continue
-      if (node.kind === 'root-skill') {
-        skills.push({
-          id: node.id,
-          name: node.name,
-          ...node.description !== undefined ? { description: node.description } : {},
-          gate: node.gate,
-          source: node.source,
-          collision: node.collision,
-        })
-        continue
-      }
-      if (node.skill !== null) skills.push(node.skill)
-      visit(node.children)
-    }
-  }
-  visit(nodes)
-  return skills
-}
-
-function skillCountLabel(t: Copy, total: number): string {
-  return t(total === 1 ? 'count.skillsOne' : 'count.skills', { n: total })
-}
-
-function folderChildren(node: CatalogNode | GroupChild): GroupChild[] {
-  if (node.kind === 'broken' || node.kind === 'root-skill') return []
-  return node.children.filter(child => {
-    if (child.kind === 'broken') return true
-    return collectSkillIds([child]).length > 0
+function homeLabel(t: Copy, home: HomeKind): string { return t(home === 'agent' ? 'home.agent' : 'home.dsh') }
+function collectSkills(nodes: readonly Node[]): SkillRef[] {
+  return nodes.flatMap(node => {
+    if (node.kind === 'broken') return []
+    if (node.kind === 'root-skill') return [node]
+    return [...(node.skill ? [node.skill] : []), ...collectSkills(node.children)]
   })
 }
-
+function collectSkillIds(nodes: readonly Node[]): string[] { return collectSkills(nodes).map(skill => skill.id) }
+function countSkills(nodes: readonly Node[]): { on: number; off: number } {
+  const skills = collectSkills(nodes)
+  const on = skills.filter(skill => skill.gate === 'on').length
+  return { on, off: skills.length - on }
+}
+function gateFromCounts(counts: { on: number; off: number }): GroupGate {
+  return counts.on > 0 && counts.off > 0 ? 'mixed' : counts.on > 0 ? 'on' : 'off'
+}
+function skillCountLabel(t: Copy, total: number): string { return t(total === 1 ? 'count.skillsOne' : 'count.skills', { n: total }) }
+function folderChildren(node: Node): GroupChild[] {
+  if (node.kind === 'broken' || node.kind === 'root-skill') return []
+  return node.children.filter(child => child.kind === 'broken' || collectSkillIds([child]).length > 0)
+}
+function soleSkill(node: Node): SkillRef | null {
+  if (node.kind === 'broken') return null
+  if (node.kind === 'root-skill') return node
+  return node.skill !== null && folderChildren(node).length === 0 ? node.skill : null
+}
 function packPrefix(name: string): string | undefined {
   const split = name.indexOf('-')
-  if (split < 2) return undefined
-  return name.slice(0, split)
+  return split < 2 ? undefined : name.slice(0, split)
 }
-
-function soleSkill(node: CatalogNode | GroupChild): SkillRef | null {
-  if (node.kind === 'broken') return null
-  if (node.kind === 'root-skill') {
-    return {
-      id: node.id,
-      name: node.name,
-      ...node.description !== undefined ? { description: node.description } : {},
-      gate: node.gate,
-      source: node.source,
-      collision: node.collision,
-    }
-  }
-  if (node.skill !== null && folderChildren(node).length === 0) return node.skill
-  return null
-}
-
 function clusterFlatPacks(nodes: readonly CatalogNode[]): CatalogNode[] {
   type Member = Extract<CatalogNode, { kind: 'pack' | 'broken' }>
   const existing = new Set(nodes.map(node => node.name))
@@ -177,761 +103,275 @@ function clusterFlatPacks(nodes: readonly CatalogNode[]): CatalogNode[] {
   for (const node of nodes) {
     if (node.kind !== 'pack' && node.kind !== 'broken') continue
     const prefix = packPrefix(node.name)
-    if (prefix === undefined || existing.has(prefix)) continue
-    counts.set(prefix, (counts.get(prefix) ?? 0) + 1)
+    if (prefix !== undefined && !existing.has(prefix)) counts.set(prefix, (counts.get(prefix) ?? 0) + 1)
   }
-  const cluster = new Set<string>()
-  for (const [prefix, count] of counts) {
-    if (count >= 3) cluster.add(prefix)
-  }
-  if (cluster.size === 0) return [...nodes]
   const buckets = new Map<string, Member[]>()
   const out: Array<CatalogNode | { kind: 'cluster'; prefix: string }> = []
   for (const node of nodes) {
-    if (node.kind !== 'pack' && node.kind !== 'broken') {
-      out.push(node)
-      continue
-    }
     const prefix = packPrefix(node.name)
-    if (prefix === undefined || !cluster.has(prefix)) {
+    if ((node.kind !== 'pack' && node.kind !== 'broken') || prefix === undefined || (counts.get(prefix) ?? 0) < 3) {
       out.push(node)
       continue
     }
     const list = buckets.get(prefix)
-    if (list === undefined) {
-      buckets.set(prefix, [node])
-      out.push({ kind: 'cluster', prefix })
-      continue
-    }
-    list.push(node)
+    if (list) list.push(node)
+    else { buckets.set(prefix, [node]); out.push({ kind: 'cluster', prefix }) }
   }
   const result: CatalogNode[] = []
   for (const node of out) {
-    if (node.kind !== 'cluster') {
-      result.push(node)
-      continue
-    }
+    if (node.kind !== 'cluster') { result.push(node); continue }
     const members = buckets.get(node.prefix)
     const first = members?.[0]
-    if (members === undefined || first === undefined) continue
+    if (!members || !first) continue
     const children = members.map(member => {
-      if (member.kind === 'broken') {
-        return {
-          ...member,
-          name: member.name.startsWith(`${node.prefix}-`) ? member.name.slice(node.prefix.length + 1) : member.name,
-        }
-      }
-      return {
-        kind: 'group' as const,
-        name: member.name.startsWith(`${node.prefix}-`) ? member.name.slice(node.prefix.length + 1) : member.name,
-        rel: member.name,
-        home: member.home,
-        path: member.path,
-        gate: member.gate,
-        skill: member.skill,
-        children: member.children,
-      }
+      const name = member.name.slice(node.prefix.length + 1)
+      if (member.kind === 'broken') return { ...member, name }
+      return { kind: 'group' as const, name, rel: member.name, home: member.home,
+        path: member.path, gate: member.gate, skill: member.skill, children: member.children }
     })
-    const home = first.home
-    result.push({
-      kind: 'pack',
-      id: `${home}:${node.prefix}`,
-      name: node.prefix,
-      home,
-      path: first.path,
-      link: { kind: 'directory' },
-      gate: gateFromCounts(countSkills(members)),
-      skill: null,
-      children,
-    })
+    result.push({ kind: 'pack', id: `${first.home}:${node.prefix}`, name: node.prefix, home: first.home,
+      path: first.path, link: { kind: 'directory' }, gate: gateFromCounts(countSkills(members)), skill: null, children })
   }
   return result
 }
-
-function textOf(node: CatalogNode | GroupChild): string {
-  if (node.kind === 'broken') return `${node.name} ${node.reason.kind}`
-  if (node.kind === 'root-skill') return `${node.name} ${node.description ?? ''}`
-  const skill = node.skill
-  return `${node.name} ${skill?.name ?? ''} ${skill?.description ?? ''}`
+function nodeMatches(node: Node, needle: string): boolean {
+  const text = node.kind === 'broken' ? `${node.name} ${node.reason.kind}`
+    : node.kind === 'root-skill' ? `${node.name} ${node.description ?? ''}`
+      : `${node.name} ${node.skill?.name ?? ''} ${node.skill?.description ?? ''}`
+  return text.toLowerCase().includes(needle)
+    || (node.kind !== 'broken' && node.kind !== 'root-skill' && node.children.some(child => nodeMatches(child, needle)))
 }
-
-function nodeMatches(node: CatalogNode | GroupChild, needle: string): boolean {
-  if (textOf(node).toLowerCase().includes(needle)) return true
-  if (node.kind === 'broken' || node.kind === 'root-skill') return false
-  return node.children.some(child => nodeMatches(child, needle))
+export function GateSwitch(props: { gate: Gate | GroupGate; label: string; disabled: boolean; onChange: (on: boolean) => void }) {
+  return <button type="button" className={css.switch} role="switch"
+    aria-checked={props.gate === 'mixed' ? 'mixed' : props.gate === 'on'}
+    aria-label={props.label} data-state={props.gate} disabled={props.disabled}
+    onClick={() => props.onChange(props.gate !== 'on')}><span className={css.thumb} /></button>
 }
-
-function SkillLeaf(props: {
-  depth: number
-  skill: SkillRef
-  label: string
-  disabled: boolean
-  layer: LayerName
-  t: Copy
-  onToggle: (kind: 'skill' | 'group', payload: Record<string, unknown>, on: boolean) => void
-  onInherit: (kind: 'skill' | 'group', payload: Record<string, unknown>) => void
-}) {
-  const skill = props.skill
+type Toggle = (ids: readonly string[], on: boolean) => void
+function SkillLeaf(props: { depth: number; skill: SkillRef; label: string; disabled: boolean; t: Copy; onToggle: Toggle }) {
+  const { skill, t } = props
   const [copied, setCopied] = useState(false)
-  const copyName = async () => {
-    const text = `/${skill.name} `
-    try {
-      await navigator.clipboard.writeText(text)
-    } catch {
-      const area = document.createElement('textarea')
-      area.value = text
-      document.body.appendChild(area)
-      area.select()
-      document.execCommand('copy')
-      area.remove()
-    }
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1500)
+  const copySlash = () => {
+    void writeClipboard(`/${skill.name} `).then(ok => {
+      if (ok) { setCopied(true); window.setTimeout(() => setCopied(false), 1500) }
+    })
   }
-  return (
-    <div className={`${css.row} ${css.leaf}`} style={{ '--depth': String(props.depth) } as CSSProperties}>
-      <span className={css.chevronGhost} />
-      <GateSwitch
-        gate={skill.gate}
-        label={props.t('switch.skill', { name: props.label, state: gateWord(props.t, skill.gate) })}
-        disabled={props.disabled}
-        onChange={on => props.onToggle('skill', { id: skill.id }, on)}
-      />
-      <div className={css.name} {...skill.description !== undefined && skill.description !== '' ? { title: skill.description } : {}}>
-        <button
-          type="button"
-          className={css.nameBtn}
-          title={props.t('copy.slash', { name: skill.name })}
-          aria-label={props.t('copy.slash', { name: skill.name })}
-          onClick={() => void copyName()}
-        >
-          <span className={css.nameText}>{props.label}</span>
-        </button>
-        {copied ? <span className={css.source}>{props.t('copy.done')}</span> : null}
-        {skill.collision ? <span className={css.collision}>{props.t('badge.collision')}</span> : null}
-        {props.layer !== 'global' && skill.source === props.layer
-          ? <span className={css.source}>{sourceLabel(props.t, skill.source)}</span>
-          : null}
-      </div>
-      {props.layer !== 'global' && skill.source === props.layer
-        ? (
-          <button
-            type="button"
-            className={css.inherit}
-            disabled={props.disabled}
-            aria-label={props.t('inherit.skill', { name: props.label })}
-            onClick={() => props.onInherit('skill', { id: skill.id })}
-          >
-            {props.t('inherit.action')}
-          </button>
-        )
-        : null}
+  const name = <span className={css.nameText}>{props.label}</span>
+  return <div className={css.row} data-leaf="" style={{ '--depth': String(props.depth) } as CSSProperties}>
+    <span className={css.chevronGhost} />
+    <div className={css.cell}><div className={css.name}>
+      {skill.description ? <Tooltip label={skill.description} side="top" maxWidth={320}>{name}</Tooltip> : name}
+      {skill.collision ? <Tag tone="warning">{t('badge.collision')}</Tag> : null}
+    </div></div>
+    <div className={css.actions}>
+      <Tooltip label={copied ? t('copy.done') : t('copy.slash', { name: skill.name })} side="top">
+        <button type="button" className={css.slash} aria-label={t('copy.slash', { name: skill.name })}
+          data-copied={copied ? '' : undefined} onClick={copySlash}>/{skill.name}</button>
+      </Tooltip>
+      <GateSwitch gate={skill.gate} label={t('switch.skill', { name: props.label, state: gateWord(t, skill.gate) })}
+        disabled={props.disabled} onChange={on => props.onToggle([skill.id], on)} />
     </div>
-  )
-}
-
-export function GateSwitch(props: {
-  gate: Gate | GroupGate
-  label: string
-  disabled: boolean
-  onChange: (on: boolean) => void
-}) {
-  return (
-    <button
-      type="button"
-      className={css.switch}
-      role="switch"
-      aria-checked={props.gate === 'mixed' ? 'mixed' : props.gate === 'on'}
-      aria-label={props.label}
-      data-state={props.gate}
-      disabled={props.disabled}
-      onClick={() => props.onChange(props.gate !== 'on')}
-    >
-      <span className={css.thumb} />
-    </button>
-  )
+  </div>
 }
 
 export function SkillHubPanel(props: {
-  sessionId?: string
-  folder?: string
-  defaultLayer: LayerName
-  layers: readonly LayerName[]
-  surface: SkillHubSurface
-  t: Copy
+  sessionId?: string; folder?: string; defaultLayer: LayerName; layers: readonly LayerName[]; surface: SkillHubSurface; t: Copy
 }) {
-  const sessionId = props.sessionId
-  const t = props.t
+  const { sessionId, t } = props
   const folder = props.folder ?? ''
   const [layer, setLayer] = useState<LayerName>(props.defaultLayer)
-  const [catalog, setCatalog] = useState<CatalogPayload | undefined>()
-  const [error, setError] = useState<string | undefined>()
+  const [catalog, setCatalog] = useState<CatalogPayload>()
+  const [error, setError] = useState<string>()
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const [dirty, setDirty] = useState(false)
+  const [notice, setNotice] = useState<{ key: SkillHubKey; seq: number }>()
   const [tab, setTab] = useState<'skills' | 'mcp'>('skills')
-  const [mcpServerCount, setMcpServerCount] = useState<number | undefined>()
-
-  const canWriteSession = sessionId !== undefined && sessionId !== ''
+  const [mcpServerCount, setMcpServerCount] = useState<number>()
+  const [mcpBulk, setMcpBulk] = useState<McpBulkActions>()
+  const [moreOpen, setMoreOpen] = useState(false)
+  const pending = useRef(false)
+  const generation = useRef(0)
+  const inFlight = useRef(0)
+  const noticeSeq = useRef(0)
+  const key = JSON.stringify([layer, folder, sessionId])
+  const activeKey = useRef(key)
+  activeKey.current = key
+  const canWriteSession = !!sessionId
   const canWriteProject = folder !== ''
-  const layerReady =
-    (layer === 'global')
-    || (layer === 'session' && canWriteSession)
-    || (layer === 'project' && canWriteProject)
-
+  const layerReady = layer === 'global' || (layer === 'session' && canWriteSession) || (layer === 'project' && canWriteProject)
   const load = useCallback(async () => {
+    const current = ++generation.current
+    inFlight.current += 1
+    setRefreshing(true)
     try {
-      setError(undefined)
-      setCatalog(await fetchCatalog(sessionId, folder === '' ? undefined : folder, layer))
+      const next = await fetchCatalog(sessionId, folder === '' ? undefined : folder, layer)
+      if (key === activeKey.current && current === generation.current) { setCatalog(next); setError(undefined) }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
-    }
-  }, [sessionId, folder, layer])
-
-  useEffect(() => { void load() }, [load])
-
-  const mutate = async (path: string, body: Record<string, unknown>) => {
-    setBusy(true)
-    try {
-      setError(undefined)
-      const next = await postCatalog(path, body)
-      setCatalog(next)
-      setDirty(true)
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      if (key === activeKey.current && current === generation.current) setError(String(caught))
     } finally {
-      setBusy(false)
+      inFlight.current -= 1
+      if (inFlight.current === 0) setRefreshing(false)
     }
-  }
-
-  const toggleBody = (extra: Record<string, unknown>) => {
-    const body: Record<string, unknown> = { layer, ...extra }
-    if (sessionId !== undefined && sessionId !== '') body['sessionId'] = sessionId
-    if (folder !== '') body['folder'] = folder
-    return body
-  }
-
-  const toggleIds = async (ids: readonly string[], on: boolean) => {
-    if (ids.length === 0) return
+  }, [key, sessionId, folder, layer])
+  // Keep the previous catalog mounted while the new layer's read is in flight:
+  // clearing it here was what made switching 本对话/本项目/全局 flash.
+  useEffect(() => { setError(undefined); void load() }, [load])
+  useCatalogRefresh(load)
+  const mutate = async (target: Record<string, unknown>, on: boolean) => {
+    if (pending.current || !layerReady) return
+    pending.current = true
+    ++generation.current
     setBusy(true)
+    setError(undefined)
     try {
-      setError(undefined)
-      try {
-        setCatalog(await postCatalog('/toggle', toggleBody({ kind: 'ids', ids, on })))
-        setDirty(true)
-        return
-      } catch {
-        let next: CatalogPayload | undefined
-        for (const id of ids) {
-          next = await postCatalog('/toggle', toggleBody({ kind: 'skill', id, on }))
-        }
-        if (next !== undefined) setCatalog(next)
-        setDirty(true)
+      const next = await postCatalog('/toggle', { layer, ...target, ...(sessionId ? { sessionId } : {}), ...(folder ? { folder } : {}) })
+      if (key === activeKey.current) {
+        setCatalog(next)
+        noticeSeq.current += 1
+        setNotice({ key: on ? 'refresh.hintOn' : 'refresh.hintOff', seq: noticeSeq.current })
       }
+      notifyCatalogChanged(layer)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
-    } finally {
-      setBusy(false)
-    }
+      if (key === activeKey.current) setError(String(caught))
+    } finally { pending.current = false; setBusy(false) }
   }
-
-  const inheritIds = async (ids: readonly string[]) => {
-    if (ids.length === 0) return
-    await mutate('/inherit', toggleBody({ kind: 'ids', ids }))
-  }
-
+  const toggleIds: Toggle = (ids, on) => { if (ids.length) void mutate({ kind: 'ids', ids, on }, on) }
   const needle = query.trim().toLowerCase()
-  const counts = useMemo(() => {
-    if (catalog === undefined) return { on: 0, off: 0 }
-    return countSkills(catalog.tree.flatMap(home => home.children))
-  }, [catalog])
-
-  return (
-    <div
-      className={css.root}
-      data-surface={props.surface}
-      data-skillhub-panel=""
-      aria-busy={busy}
-    >
-      <div className={css.tabsRow}>
-        {props.surface === 'page' ? <div className={css.eyebrow}>{t('nav')}</div> : null}
-        <div className={css.tabs} role="tablist" aria-label={t('tab.aria')}>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'skills'}
-            className={css.tabBtn}
-            data-active={tab === 'skills' ? '' : undefined}
-            onClick={() => setTab('skills')}
-          >
-            <IconSkillOutline16 size={14} />
-            <span>{t('tab.skills')}</span>
-            {counts.on + counts.off > 0 ? (
-              <span className={css.tabBadge}>{counts.on + counts.off}</span>
-            ) : null}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'mcp'}
-            className={css.tabBtn}
-            data-active={tab === 'mcp' ? '' : undefined}
-            onClick={() => setTab('mcp')}
-          >
-            <IconCordisPluginOutline14 size={14} />
-            <span>{t('tab.mcp')}</span>
-            {mcpServerCount !== undefined && mcpServerCount > 0 ? (
-              <span className={css.tabBadge}>{mcpServerCount}</span>
-            ) : null}
-          </button>
-        </div>
-
-        {props.layers.length > 1 ? (
-          <div className={css.segment} role="radiogroup" aria-label={t('layer.aria')}>
-            {props.layers.map(name => {
-              const disabled = (name === 'session' && !canWriteSession) || (name === 'project' && !canWriteProject)
-              return (
-                <button
-                  key={name}
-                  type="button"
-                  role="radio"
-                  aria-checked={layer === name}
-                  data-active={layer === name ? '' : undefined}
-                  disabled={disabled}
-                  {...(name === 'session' && !canWriteSession
-                    ? { title: t('session.needsChat') }
-                    : name === 'project' && !canWriteProject
-                      ? { title: t('project.needsWorkspace') }
-                      : {})}
-                  onClick={() => setLayer(name)}
-                >
-                  {layerLabel(t, name)}
-                </button>
-              )
-            })}
-          </div>
-        ) : null}
+  const counts = useMemo(() => catalog ? countSkills(catalog.tree.flatMap(home => home.children)) : { on: 0, off: 0 }, [catalog])
+  const allSkillCount = counts.on + counts.off
+  const canBulk = layerReady && !busy && catalog !== undefined && allSkillCount > 0
+  const moreDisabled = tab === 'mcp' ? mcpBulk === undefined || mcpBulk.disabled : !canBulk
+  const moreItems = [
+    { id: 'allOn', label: t('allOn'), disabled: moreDisabled },
+    { id: 'allOff', label: t('allOff'), disabled: moreDisabled },
+  ]
+  const onMoreSelect = (id: string) => {
+    setMoreOpen(false)
+    if (id !== 'allOn' && id !== 'allOff') return
+    if (tab === 'mcp') { if (id === 'allOn') mcpBulk?.allOn(); else mcpBulk?.allOff() }
+    else void mutate({ kind: 'all', on: id === 'allOn' }, id === 'allOn')
+  }
+  return <div className={css.root} data-surface={props.surface} data-skillhub-panel="" aria-busy={busy || refreshing}>
+    <div className={css.toolbar}>
+      <div className={css.tabs} role="tablist" aria-label={t('tab.aria')}>
+        <Pill role="tab" aria-selected={tab === 'skills'} active={tab === 'skills'} onClick={() => setTab('skills')}>
+          <IconSkillOutline16 size={13} /><span>{t('tab.skills')}</span>
+          {allSkillCount > 0 ? <span className={css.pillCount}>{allSkillCount}</span> : null}
+        </Pill>
+        <Pill role="tab" aria-selected={tab === 'mcp'} active={tab === 'mcp'} onClick={() => setTab('mcp')}>
+          <IconCordisPluginOutline14 size={13} /><span>{t('tab.mcp')}</span>
+          {mcpServerCount !== undefined && mcpServerCount > 0 ? <span className={css.pillCount}>{mcpServerCount}</span> : null}
+        </Pill>
       </div>
-
-      {tab === 'mcp' ? (
-        <McpPanel
-          surface={props.surface}
-          layer={layer}
-          sessionId={sessionId}
-          folder={folder}
-          canWriteSession={canWriteSession}
-          canWriteProject={canWriteProject}
-          layerReady={layerReady}
-          onServerCountChange={setMcpServerCount}
-          t={t}
-        />
-      ) : (
-        <>
-          <header className={css.header} data-ud-check="skillhub-header" data-ud-role="nav">
-            <div className={css.titleRow}>
-              <div className={css.titleBlock}>
-                <h2 className={css.title}>{t(props.surface === 'page' ? 'title.global' : 'title.context')}</h2>
-                <p className={css.lede}>{t(props.surface === 'page' ? 'lede.global' : 'lede.context')}</p>
-              </div>
-              <div className={css.headerActions}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={!layerReady || busy || catalog === undefined}
-                  onClick={() => void mutate('/toggle', toggleBody({ kind: 'all', on: false }))}
-                >
-                  {t('allOff')}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={!layerReady || busy || catalog === undefined}
-                  onClick={() => void mutate('/toggle', toggleBody({ kind: 'all', on: true }))}
-                >
-                  {t('allOn')}
-                </Button>
-                {layer !== 'global' && catalog !== undefined && collectSkills(catalog.tree.flatMap(h => h.children)).some(s => s.source === layer) ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={!layerReady || busy || catalog === undefined}
-                    onClick={() => void mutate('/inherit', toggleBody({ kind: 'all' }))}
-                  >
-                    {t('allInherit')}
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-            {catalog !== undefined
-              ? (
-                <div className={css.counts} aria-live="polite">
-                  <span>{t('count.on', { n: counts.on })}</span>
-                  <span>{t('count.off', { n: counts.off })}</span>
-                  {catalog.collisions.length > 0
-                    ? <span>{t('count.collisions', { n: catalog.collisions.length })}</span>
-                    : null}
-                </div>
-              )
-              : null}
-          </header>
-
-          <label className={css.search}>
-            <span className={css.helper}>{t('search')}</span>
-            <Input
-              className={css.field ?? ''}
-              icon={<IconSearchOutline16 size={16} />}
-              value={query}
-              placeholder={t('search.placeholder')}
-              onChange={event => setQuery(event.currentTarget.value)}
-            />
-          </label>
-
-          <div className={css.body} data-ud-check="skillhub-tree" data-ud-role="panel">
-            {dirty && catalog !== undefined
-              ? (
-                <div className={css.bannerRow}>
-                  <p className={css.warn} role="status">{t('refresh.hint')}</p>
-                  <Button variant="outline" size="sm" onClick={() => window.location.reload()}>{t('refresh.action')}</Button>
-                </div>
-              )
-              : null}
-            {error !== undefined
-              ? (
-                <div className={css.bannerRow}>
-                  <p className={css.error} role="alert">{t('error.load', { error })}</p>
-                  <Button variant="outline" size="sm" onClick={() => void load()}>{t('error.retry')}</Button>
-                </div>
-              )
-              : null}
-            {catalog !== undefined && catalog.collisions.length > 0
-              ? (
-                <p className={css.warn} role="status">
-                  {t('collision.warn')}
-                  {' '}
-                  {catalog.collisions.map(row => row.name).join(', ')}
-                </p>
-              )
-              : null}
-            {catalog?.legacySessionSnapshot === true
-              ? <p className={css.warn} role="status">{t('legacy.snapshot')}</p>
-              : null}
-            {catalog === undefined && error === undefined
-              ? (
-                <div className={css.skeleton} aria-label={t('loading')}>
-                  <div className={css.skel} />
-                  <div className={css.skel} />
-                  <div className={css.skel} />
-                </div>
-              )
-              : null}
-            {catalog !== undefined && counts.on + counts.off === 0 && needle === ''
-              ? (
-                <div className={css.emptyCard} data-ud-check="skillhub-skills-empty">
-                  <div className={css.emptyIcon}>
-                    <IconSkillOutline16 size={28} />
-                  </div>
-                  <h4 className={css.emptyTitle}>{t('skills.empty.title')}</h4>
-                  <p className={css.emptyDesc}>{t('skills.empty.desc')}</p>
-                </div>
-              )
-              : null}
-            {catalog !== undefined && (counts.on + counts.off > 0 || needle !== '')
-              ? catalog.tree.map(home => {
-            const clustered = clusterFlatPacks(home.children)
-            const children = needle === ''
-              ? clustered
-              : clustered.filter(node => nodeMatches(node, needle))
-            const populatedHomes = catalog.tree.filter(row => row.children.length > 0).length
-            const hideHomeChrome = props.surface === 'popover' && populatedHomes <= 1
-            const homeKey = `home:${home.home}`
-            const homeOpen = hideHomeChrome || needle !== '' || (expanded[homeKey] ?? true)
-            const homeCounts = countSkills(home.children)
-            const homeIds = collectSkillIds(home.children)
-            const homeHasOverride = layer !== 'global' && collectSkills(home.children).some(skill => skill.source === layer)
-            const homeTotal = homeCounts.on + homeCounts.off
-            const label = homeLabel(t, home.home)
-            const tree = children.length === 0
-              ? (
-                <p className={css.empty}>
-                  {needle === '' ? t('empty.home') : t('empty.search')}
-                </p>
-              )
-              : children.map(node => (
-                <TreeNode
-                  key={node.kind === 'pack' ? node.path : node.kind === 'root-skill' ? node.id : node.path}
-                  node={node}
-                  packHome={home.home}
-                  packName={node.kind === 'pack' ? node.name : ''}
-                  depth={hideHomeChrome ? 0 : 1}
-                  needle={needle}
-                  expanded={expanded}
-                  setExpanded={setExpanded}
-                  disabled={!layerReady || busy}
-                  layer={layer}
-                  t={t}
-                  onToggle={(kind, payload, on) => {
-                    if (kind === 'group') {
-                      const ids = Array.isArray(payload['ids'])
-                        ? payload['ids'].filter((id): id is string => typeof id === 'string')
-                        : collectSkillIds([node])
-                      void toggleIds(ids, on)
-                      return
-                    }
-                    void mutate('/toggle', toggleBody({ kind, on, ...payload }))
-                  }}
-                  onInherit={(kind, payload) => {
-                    if (kind === 'group') {
-                      const ids = Array.isArray(payload['ids'])
-                        ? payload['ids'].filter((id): id is string => typeof id === 'string')
-                        : collectSkillIds([node])
-                      void inheritIds(ids)
-                      return
-                    }
-                    void mutate('/inherit', toggleBody({ kind, ...payload }))
-                  }}
-                />
-              ))
-            if (hideHomeChrome) {
-              return (
-                <section key={home.home} className={css.home} aria-label={label}>
-                  {tree}
-                </section>
-              )
-            }
-            return (
-              <section key={home.home} className={css.home} aria-label={label}>
-                <div className={css.row} style={{ '--depth': '0' } as CSSProperties} data-folder="">
-                  <button
-                    type="button"
-                    className={css.chevron}
-                    aria-expanded={homeOpen}
-                    aria-label={t(homeOpen ? 'collapse' : 'expand', { name: label })}
-                    onClick={() => setExpanded(current => ({
-                      ...current,
-                      [homeKey]: !(current[homeKey] ?? true),
-                    }))}
-                  >
-                    <IconChevronRightOutline14 size={14} />
-                  </button>
-                  <GateSwitch
-                    gate={gateFromCounts(homeCounts)}
-                    label={t('switch.folder', { name: label, state: gateWord(t, gateFromCounts(homeCounts)) })}
-                    disabled={!layerReady || busy || homeIds.length === 0}
-                    onChange={on => void toggleIds(homeIds, on)}
-                  />
-                  <button
-                    type="button"
-                    className={css.nameBtn}
-                    title={home.path}
-                    onClick={() => setExpanded(current => ({
-                      ...current,
-                      [homeKey]: !(current[homeKey] ?? true),
-                    }))}
-                  >
-                    <span className={css.name}>
-                      <span className={css.nameText}>{label}</span>
-                      {homeTotal > 1 ? <span className={css.badge}>{skillCountLabel(t, homeTotal)}</span> : null}
-                    </span>
-                  </button>
-                  {homeHasOverride
-                    ? (
-                      <button
-                        type="button"
-                        className={css.inherit}
-                        disabled={!layerReady || busy}
-                        aria-label={t('inherit.folder', { name: label })}
-                        onClick={() => void inheritIds(homeIds)}
-                      >
-                        {t('inherit.action')}
-                      </button>
-                    )
-                    : null}
-                </div>
-                {homeOpen ? tree : null}
-              </section>
-            )
-          })
-          : null}
+      <div className={css.toolbarEnd}>
+        {props.layers.length > 1 ? <div className={css.segment} role="radiogroup" aria-label={t('layer.aria')}>
+          {props.layers.map(name => <button key={name} type="button" role="radio" aria-checked={layer === name}
+            data-active={layer === name ? '' : undefined}
+            disabled={busy || (name === 'session' && !canWriteSession) || (name === 'project' && !canWriteProject)}
+            onClick={() => setLayer(name)}>{layerLabel(t, name)}</button>)}
+        </div> : null}
+        <Menu open={moreOpen} onClose={() => setMoreOpen(false)} onSelect={onMoreSelect} items={moreItems} align="end" compact portal
+          anchor={<Button variant="ghost" size="sm" icon={<IconEllipsisOutline16 size={16} />} aria-label={t('more')} title={t('more')}
+            onClick={() => setMoreOpen(value => !value)} />} />
       </div>
-        </>
-      )}
     </div>
-  )
+    {tab === 'mcp' ? <McpPanel surface={props.surface} layer={layer} sessionId={sessionId} folder={folder}
+      canWriteSession={canWriteSession} canWriteProject={canWriteProject} layerReady={layerReady}
+      onServerCountChange={setMcpServerCount} onBulkActions={setMcpBulk} t={t} /> : <>
+      <label className={css.search}><Input className={css.field ?? ''} icon={<IconSearchOutline16 size={16} />}
+        value={query} placeholder={t('search.placeholder')} aria-label={t('search.placeholder')}
+        onChange={event => setQuery(event.currentTarget.value)} /></label>
+      <div className={css.body} data-ud-check="skillhub-tree" data-ud-role="panel">
+        {error !== undefined ? <div className={css.bannerRow}>
+          <p className={css.error} role="alert">{t('error.load', { error })}</p>
+          <Button variant="outline" size="sm" onClick={() => void load()}>{t('error.retry')}</Button>
+        </div> : null}
+        {catalog && catalog.collisions.length > 0 ? <p className={css.warn} role="status">
+          {t('collision.warn')} {catalog.collisions.map(row => row.name).join(', ')}
+        </p> : null}
+        {catalog === undefined && error === undefined ? <div className={css.skeleton} aria-label={t('loading')}>
+          <div className={css.skel} /><div className={css.skel} /><div className={css.skel} />
+        </div> : null}
+        {catalog !== undefined && allSkillCount === 0 && needle === '' ? <div className={css.emptyCard} data-ud-check="skillhub-skills-empty">
+          <div className={css.emptyIcon}><IconSkillOutline16 size={28} /></div>
+          <h4 className={css.emptyTitle}>{t('skills.empty.title')}</h4><p className={css.emptyDesc}>{t('skills.empty.desc')}</p>
+        </div> : null}
+        {catalog !== undefined && (allSkillCount > 0 || needle !== '') ? catalog.tree.map(home => {
+          const children = clusterFlatPacks(home.children).filter(node => needle === '' || nodeMatches(node, needle))
+          const hideHomeChrome = props.surface === 'popover' && catalog.tree.filter(row => row.children.length > 0).length <= 1
+          const homeKey = `home:${home.home}`
+          const homeOpen = hideHomeChrome || needle !== '' || (expanded[homeKey] ?? true)
+          const homeCounts = countSkills(home.children)
+          const homeIds = collectSkillIds(home.children)
+          const label = homeLabel(t, home.home)
+          const toggleOpen = () => setExpanded(current => ({ ...current, [homeKey]: !(current[homeKey] ?? true) }))
+          const tree = children.length === 0 ? <p className={css.empty}>{t(needle === '' ? 'empty.home' : 'empty.search')}</p>
+            : children.map(node => <TreeNode key={node.kind === 'root-skill' ? node.id : node.path} node={node}
+              depth={hideHomeChrome ? 0 : 1} needle={needle} expanded={expanded} setExpanded={setExpanded}
+              disabled={!layerReady || busy} t={t} onToggle={toggleIds} />)
+          return <section key={home.home} className={css.home} aria-label={label}>
+            {!hideHomeChrome ? <div className={css.row} style={{ '--depth': '0' } as CSSProperties} data-folder="">
+              <button type="button" className={css.chevron} aria-expanded={homeOpen}
+                aria-label={t(homeOpen ? 'collapse' : 'expand', { name: label })} onClick={toggleOpen}><IconChevronRightOutline14 size={14} /></button>
+              <div className={css.cell}><button type="button" className={css.nameBtn} title={home.path} onClick={toggleOpen}>
+                <span className={css.name}><span className={css.nameText}>{label}</span>
+                  {homeIds.length > 1 ? <Tag tone="quiet">{skillCountLabel(t, homeIds.length)}</Tag> : null}
+                </span>
+              </button></div>
+              <div className={css.actions}><GateSwitch gate={gateFromCounts(homeCounts)}
+                label={t('switch.folder', { name: label, state: gateWord(t, gateFromCounts(homeCounts)) })}
+                disabled={!layerReady || busy || homeIds.length === 0} onChange={on => toggleIds(homeIds, on)} /></div>
+            </div> : null}
+            {homeOpen ? tree : null}
+          </section>
+        }) : null}
+      </div>
+      {notice ? <Toast key={notice.seq} text={t(notice.key)} onDone={() => setNotice(current => current?.seq === notice.seq ? undefined : current)} /> : null}
+    </>}
+  </div>
 }
-
 function TreeNode(props: {
-  node: CatalogNode | GroupChild
-  packHome: HomeKind
-  packName: string
-  depth: number
-  needle: string
-  expanded: Record<string, boolean>
+  node: Node; depth: number; needle: string; expanded: Record<string, boolean>
   setExpanded: (next: Record<string, boolean> | ((current: Record<string, boolean>) => Record<string, boolean>)) => void
-  disabled: boolean
-  layer: LayerName
-  t: Copy
-  onToggle: (kind: 'skill' | 'group', payload: Record<string, unknown>, on: boolean) => void
-  onInherit: (kind: 'skill' | 'group', payload: Record<string, unknown>) => void
+  disabled: boolean; t: Copy; onToggle: Toggle
 }) {
-  const { node } = props
+  const { node, t } = props
   const style = { '--depth': String(props.depth) } as CSSProperties
-
-  if (node.kind === 'broken') {
-    return (
-      <div className={css.row} data-broken="" style={style}>
-        <span className={css.chevronGhost} />
-        <div className={css.name}>
-          <IconWarningOutline16 size={14} />
-          <span className={css.nameText}>{node.name}</span>
-          <span className={css.brokenMark}>{brokenCopy(props.t, node.reason)}</span>
-        </div>
-      </div>
-    )
-  }
-
-  if (node.kind === 'root-skill') {
-    return (
-      <SkillLeaf
-        depth={props.depth}
-        skill={{
-          id: node.id,
-          name: node.name,
-          ...node.description !== undefined ? { description: node.description } : {},
-          gate: node.gate,
-          source: node.source,
-          collision: node.collision,
-        }}
-        label={node.name}
-        disabled={props.disabled}
-        layer={props.layer}
-        t={props.t}
-        onToggle={props.onToggle}
-        onInherit={props.onInherit}
-      />
-    )
-  }
-
+  if (node.kind === 'broken') return <div className={css.row} data-broken="" style={style}>
+    <span className={css.chevronGhost} /><div className={css.cell}><div className={css.name}>
+      <IconWarningOutline16 size={14} /><span className={css.nameText}>{node.name}</span>
+      <Tag tone="danger">{brokenCopy(t, node.reason)}</Tag>
+    </div></div>
+  </div>
   const leaf = soleSkill(node)
-  if (leaf !== null) {
-    return (
-      <SkillLeaf
-        depth={props.depth}
-        skill={leaf}
-        label={node.name}
-        disabled={props.disabled}
-        layer={props.layer}
-        t={props.t}
-        onToggle={props.onToggle}
-        onInherit={props.onInherit}
-      />
-    )
-  }
-
-  const packName = node.kind === 'pack' ? node.name : props.packName
-  const packHome = node.kind === 'pack' ? node.home : props.packHome
-  const rel = node.kind === 'group' ? node.rel : node.name
-  const key = node.kind === 'pack' ? node.path : `${packHome}:${rel}`
+  if (leaf) return <SkillLeaf depth={props.depth} skill={leaf} label={node.name} disabled={props.disabled} t={t} onToggle={props.onToggle} />
+  if (node.kind === 'root-skill') return null
   const children = folderChildren(node)
-  const nested = children.length > 0
-  const expandable = nested
-  const counts = countSkills([node])
-  const total = counts.on + counts.off
   const ids = collectSkillIds([node])
-  const hasOverride = props.layer !== 'global' && collectSkills([node]).some(skill => skill.source === props.layer)
-  const defaultOpen = false
-  const open = props.needle !== '' || (props.expanded[key] ?? defaultOpen)
-  const visibleChildren = props.needle === ''
-    ? children
-    : children.filter(child => nodeMatches(child, props.needle))
-  const toggleOpen = () => {
-    if (!expandable) return
-    props.setExpanded(current => ({
-      ...current,
-      [key]: !(current[key] ?? defaultOpen),
-    }))
-  }
-  const showOwnSkill = open && node.skill !== null && nested
-
-  return (
-    <div>
-      <div className={css.row} style={style} data-folder={expandable ? '' : undefined}>
-        {expandable
-          ? (
-            <button
-              type="button"
-              className={css.chevron}
-              aria-expanded={open}
-              aria-label={props.t(open ? 'collapse' : 'expand', { name: node.name })}
-              onClick={toggleOpen}
-            >
-              <IconChevronRightOutline14 size={14} />
-            </button>
-          )
-          : <span className={css.chevronGhost} />}
-        <GateSwitch
-          gate={node.gate}
-          label={props.t('switch.folder', { name: node.name, state: gateWord(props.t, node.gate) })}
-          disabled={props.disabled || ids.length === 0}
-          onChange={on => props.onToggle('group', { packHome, packName, rel, ids }, on)}
-        />
-        <button type="button" className={css.nameBtn} onClick={toggleOpen} disabled={!expandable}>
-          <span className={css.name}>
-            <span className={css.nameText}>{node.name}</span>
-            {total > 1 ? <span className={css.badge}>{skillCountLabel(props.t, total)}</span> : null}
-          </span>
-        </button>
-        {hasOverride
-          ? (
-            <button
-              type="button"
-              className={css.inherit}
-              disabled={props.disabled}
-              aria-label={props.t('inherit.folder', { name: node.name })}
-              onClick={() => props.onInherit('group', { packHome, packName, rel, ids })}
-            >
-              {props.t('inherit.action')}
-            </button>
-          )
-          : null}
-      </div>
-      {open
-        ? (
-          <>
-            {showOwnSkill && node.skill !== null
-              ? (
-                <SkillLeaf
-                  depth={props.depth + 1}
-                  skill={node.skill}
-                  label={node.skill.name}
-                  disabled={props.disabled}
-                  layer={props.layer}
-                  t={props.t}
-                  onToggle={props.onToggle}
-                  onInherit={props.onInherit}
-                />
-              )
-              : null}
-            {visibleChildren.map(child => (
-              <TreeNode
-                key={child.kind === 'broken' ? child.path : child.rel}
-                node={child}
-                packHome={packHome}
-                packName={packName}
-                depth={props.depth + 1}
-                needle={props.needle}
-                expanded={props.expanded}
-                setExpanded={props.setExpanded}
-                disabled={props.disabled}
-                layer={props.layer}
-                t={props.t}
-                onToggle={props.onToggle}
-                onInherit={props.onInherit}
-              />
-            ))}
-          </>
-        )
-          : null}
+  const key = node.path
+  const open = props.needle !== '' || (props.expanded[key] ?? false)
+  const toggleOpen = () => props.setExpanded(current => ({ ...current, [key]: !(current[key] ?? false) }))
+  return <div>
+    <div className={css.row} style={style} data-folder={children.length ? '' : undefined}>
+      {children.length ? <button type="button" className={css.chevron} aria-expanded={open}
+        aria-label={t(open ? 'collapse' : 'expand', { name: node.name })} onClick={toggleOpen}><IconChevronRightOutline14 size={14} /></button>
+        : <span className={css.chevronGhost} />}
+      <div className={css.cell}><button type="button" className={css.nameBtn} onClick={toggleOpen} disabled={!children.length}>
+        <span className={css.name}><span className={css.nameText}>{node.name}</span>
+          {ids.length > 1 ? <Tag tone="quiet">{skillCountLabel(t, ids.length)}</Tag> : null}
+        </span>
+      </button></div>
+      <div className={css.actions}><GateSwitch gate={node.gate}
+        label={t('switch.folder', { name: node.name, state: gateWord(t, node.gate) })}
+        disabled={props.disabled || ids.length === 0} onChange={on => props.onToggle(ids, on)} /></div>
     </div>
-  )
+    {open ? <>
+      {node.skill && children.length ? <SkillLeaf depth={props.depth + 1} skill={node.skill} label={node.skill.name}
+        disabled={props.disabled} t={t} onToggle={props.onToggle} /> : null}
+      {children.filter(child => props.needle === '' || nodeMatches(child, props.needle)).map(child =>
+        <TreeNode key={child.path} {...props} node={child} depth={props.depth + 1} />)}
+    </> : null}
+  </div>
 }

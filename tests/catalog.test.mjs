@@ -120,7 +120,7 @@ test('dangling pack symlink is broken', async () => {
   assert.ok(catalog.broken.some(entry => entry.reason.kind === 'missing-symlink-target'))
 })
 
-test('keeps a pack whose SKILL.md name is not kebab-case', async () => {
+test('a pack whose SKILL.md name is not kebab-case is broken', async () => {
   const root = await mkdtemp(join(tmpdir(), 'skillhub-'))
   const agent = join(root, 'agent')
   const dsh = join(root, 'dsh')
@@ -132,12 +132,15 @@ test('keeps a pack whose SKILL.md name is not kebab-case', async () => {
   await writeFile(join(agent, 'pstack-poteto-mode', 'playbooks', 'feature.md'), '# feature\n')
   await mkdir(dsh, { recursive: true })
   const catalog = resolveCatalog({ agentHome: agent, dshHome: dsh })
-  const pack = catalog.tree[0].children.find(node => node.kind === 'pack' && node.name === 'pstack-poteto-mode')
-  assert.equal(pack.kind, 'pack')
-  assert.equal(pack.skill.name, 'Poteto Mode')
-  assert.equal(pack.skill.gate, 'on')
+  const pack = catalog.tree[0].children.find(node => node.name === 'pstack-poteto-mode')
+  assert.equal(pack.kind, 'broken')
+  assert.equal(pack.reason.kind, 'invalid-name')
+  assert.equal(pack.reason.raw, 'Poteto Mode')
   assert.equal(catalog.offered.some(skill => skill.name === 'Poteto Mode'), false)
-  assert.equal(catalog.broken.some(entry => entry.path.includes('pstack-poteto-mode')), false)
+  assert.equal(catalog.inventory.some(skill => skill.name === 'Poteto Mode'), false)
+  assert.ok(catalog.broken.some(
+    entry => entry.reason.kind === 'invalid-name' && entry.reason.raw === 'Poteto Mode',
+  ))
 })
 
 test('global explicit default applies to skills added later', async () => {
@@ -231,4 +234,64 @@ test('ignores .git and node_modules and does not scan a sibling project skills d
   await mkdir(dsh, { recursive: true })
   const catalog = resolveCatalog({ agentHome: agent, dshHome: dsh })
   assert.deepEqual(catalog.offered.map(skill => skill.name), ['visible'])
+})
+
+test('symlink self-loop reports symlink-cycle without duplicating the skill', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skillhub-'))
+  const agent = join(root, 'agent')
+  const dsh = join(root, 'dsh')
+  const pack = join(agent, 'pack')
+  await skillFile(pack, 'loopy')
+  await mkdir(dsh, { recursive: true })
+  await symlink(pack, join(pack, 'self'))
+  const catalog = resolveCatalog({ agentHome: agent, dshHome: dsh })
+  const cycles = catalog.broken.filter(entry => entry.reason.kind === 'symlink-cycle')
+  assert.equal(cycles.length, 1)
+  assert.equal(cycles[0].path, join(pack, 'self'))
+  const ids = catalog.inventory.filter(skill => skill.name === 'loopy').map(skill => skill.id)
+  assert.deepEqual(ids, ['agent:pack/SKILL.md'])
+  const packNode = catalog.tree[0].children.find(node => node.kind === 'pack' && node.name === 'pack')
+  const self = packNode.children.find(child => child.name === 'self')
+  assert.equal(self.kind, 'broken')
+  assert.equal(self.reason.kind, 'symlink-cycle')
+})
+
+test('non-kebab SKILL.md name surfaces as a broken invalid-name row', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skillhub-'))
+  const agent = join(root, 'agent')
+  const dsh = join(root, 'dsh')
+  await skillFile(join(agent, 'badpack'), 'Bad_Name')
+  await mkdir(dsh, { recursive: true })
+  const catalog = resolveCatalog({ agentHome: agent, dshHome: dsh })
+  assert.equal(catalog.inventory.length, 0)
+  const entry = catalog.broken.find(item => item.reason.kind === 'invalid-name')
+  assert.ok(entry)
+  assert.equal(entry.reason.raw, 'Bad_Name')
+  assert.equal(entry.path, join(agent, 'badpack', 'SKILL.md'))
+  const pack = catalog.tree[0].children.find(node => node.name === 'badpack')
+  assert.equal(pack.kind, 'broken')
+  assert.equal(pack.reason.kind, 'invalid-name')
+})
+
+test('composed catalog uses the actual scoped default and ignores foreign markers', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skillhub-'))
+  const agent = join(root, 'agent')
+  const dsh = join(root, 'dsh')
+  await skillFile(join(agent, 'one'), 'one')
+  await skillFile(join(agent, 'two'), 'two')
+  await skillFile(join(agent, 'three'), 'three')
+  await mkdir(dsh, { recursive: true })
+  const twoId = skillId('agent', 'two/SKILL.md')
+  const input = {
+    agentHome: agent, dshHome: dsh, composeChain: true,
+    project: { version: 2, default: 'off', gates: { [twoId]: 'on' } },
+    markerDocuments: [{ layer: 'session', document: { version: 2, default: 'off', gates: {} } }],
+  }
+  const inv = Object.fromEntries(resolveCatalog(input).inventory.map(skill => [skill.name, skill]))
+  assert.equal(inv.one.gate, 'off')
+  assert.equal(inv.one.source, 'project')
+  assert.equal(inv.two.gate, 'on')
+  assert.equal(inv.two.source, 'project')
+  assert.equal(inv.three.gate, 'off')
+  assert.equal(inv.three.source, 'project')
 })

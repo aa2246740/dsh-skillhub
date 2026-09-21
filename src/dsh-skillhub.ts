@@ -44,12 +44,20 @@ function defaultStoreDir(): string {
 export function apply(ctx: Context, config: Config) {
   console.log('[my-plugins/dsh-skillhub] loaded')
   let source = () => config
+  // The settings section installs even when disabled so the user can
+  // re-enable the plugin; the enabled flag itself applies on reload.
   ctx.inject(['settings'], settingsCtx => {
     settingsCtx.settings.installSection(ctx, NS, Config, config, {
       setSource: current => { source = current },
-      onChange: () => { void source() },
+      onChange: () => {
+        console.log('[dsh-skillhub] enabled=%s applies on reload', String(source().enabled !== false))
+      },
     })
   })
+  if (config.enabled === false) {
+    console.log('[my-plugins/dsh-skillhub] disabled; provider, http, and hooks skipped')
+    return
+  }
   const hub = new SkillHub({
     agentHome: defaultAgentHome(),
     dshHome: defaultDshHome(),
@@ -76,31 +84,66 @@ export function apply(ctx: Context, config: Config) {
     path: '/skillhub',
     handler: (req, res) => { void handler(req, res) },
   }), 'dsh-skillhub http')
+  const attached = new WeakSet<object>()
+  const attach = (payload: unknown) => {
+    const agent = (payload as { agent?: object } | undefined)?.agent
+    if (agent === undefined || attached.has(agent)) return
+    attached.add(agent)
+    attachAgentProvider(ctx, hub, payload)
+  }
   ctx.effect(() => {
     const onCreated = ctx.on.bind(ctx) as (event: string, listener: (payload: unknown) => void) => () => void
-    return onCreated('agent/created', payload => {
-      attachAgentProvider(hub, payload)
-    })
+    return onCreated('agent/created', attach)
   }, 'dsh-skillhub agent provider')
+  const agents = ctx.get('agents') as { list(): object[] } | undefined
+  for (const agent of agents?.list() ?? []) attach({ agent })
   console.log('[my-plugins/dsh-skillhub] http /skillhub')
 }
 
-function attachAgentProvider(
+/** Chat identity of one created agent, for the provider registered under it. */
+function sessionIdOfAgent(agent: { id?: string; session?: { id?: string; header?: { id?: string } } }): string | undefined {
+  if (typeof agent.session?.id === 'string') return agent.session.id
+  if (typeof agent.session?.header?.id === 'string') return agent.session.header.id
+  return typeof agent.id === 'string' && agent.id !== '' ? agent.id : undefined
+}
+
+export function attachAgentProvider(
+  owner: Context,
   hub: SkillHub,
   payload: unknown,
 ): void {
   if (typeof payload !== 'object' || payload === null) return
-  const agent = (payload as { agent?: { ctx?: Context; session?: { header?: { cwd?: string } } } }).agent
+  const agent = (payload as {
+    agent?: { id?: string; ctx?: Context; session?: { id?: string; header?: { id?: string; cwd?: string } } }
+  }).agent
   if (agent === undefined) return
   const agentCtx = agent.ctx
   if (agentCtx === undefined) return
   try {
     const skills = agentCtx.get('skills') as Context['skills'] | undefined
     if (skills === undefined || typeof skills.registerProvider !== 'function') return
-    agentCtx.effect(
-      () => skills.registerProvider(() => createSkillHubProvider(hub)),
-      'dsh-skillhub agent provider',
-    )
+    // Bind this agent's chat into its provider: the registry reads with the
+    // agent's own context as the scope, and resolving the chat from inside that
+    // value is not reliable for every caller shape. This registration serves
+    // exactly one agent, so its Chat layer can be applied unconditionally.
+    const sessionId = sessionIdOfAgent(agent)
+    // Older releases left a provider owned only by the agent across Host HMR.
+    // A separate public registration outranks that legacy provider for the same
+    // disk skills, without touching private registry state or other plugins.
+    // Both the plugin and the agent now own the exact disposer.
+    owner.effect(() => agentCtx.effect(() => skills.registerProvider(() => {
+      const current = createSkillHubProvider(hub, sessionId)
+      const name = 'skillhub-propagation'
+      return {
+        ...current,
+        name,
+        async list(options) {
+          const result = await current.list(options)
+          if (!Array.isArray(result)) return result
+          return result.map(candidate => ({ ...candidate, provider: name, rank: (candidate.rank ?? 350) - 2 }))
+        },
+      }
+    }), 'dsh-skillhub scoped propagation'), 'dsh-skillhub agent provider')
   } catch (error) {
     console.error('[dsh-skillhub] agent provider failed', error)
   }

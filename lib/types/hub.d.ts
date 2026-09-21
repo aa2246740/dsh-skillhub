@@ -4,6 +4,7 @@ export type CatalogQuery = {
     readonly sessionId?: string;
     readonly folder?: string;
     readonly layer?: LayerName;
+    readonly resolved?: boolean;
 };
 export interface HubPaths {
     readonly agentHome: string;
@@ -37,13 +38,17 @@ export declare class SkillHub {
     private projectPath;
     private sessionPath;
     private documentPath;
+    /** UI and provider use the same scoped, latest-operation resolution. */
     catalog(query?: CatalogQuery): Catalog;
+    layerCatalog(layer: LayerName, folder?: string, sessionId?: string): Catalog;
+    displayedCatalog(layer: LayerName, folder?: string, sessionId?: string): Catalog;
     toggle(query: {
         layer: LayerName;
         sessionId?: string;
         folder?: string;
         target: ToggleTarget;
     }): Catalog;
+    /** Compatibility for older clients only; no restore controls in the current UI. */
     inherit(query: {
         layer: LayerName;
         sessionId?: string;

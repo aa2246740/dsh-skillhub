@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { nextPropagationRevision, propagatedGate, readPropagationMetadata, type PropagationMetadata } from './propagation.ts'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
@@ -6,7 +7,7 @@ export type McpLayer = 'global' | 'project' | 'session'
 export type McpGate = 'on' | 'off'
 export type McpLayerGate = McpGate | 'inherit'
 
-export interface McpVisibilityDocument {
+export interface McpVisibilityDocument extends PropagationMetadata {
   readonly version: 2
   readonly default: McpLayerGate
   readonly gates: Readonly<Record<string, McpLayerGate>>
@@ -155,13 +156,13 @@ function readDoc(path: string, layer: McpLayer): McpVisibilityDocument {
   if (defaultGate !== 'on' && defaultGate !== 'off' && !(layer !== 'global' && defaultGate === 'inherit')) {
     throw new Error(`Invalid SkillHub MCP visibility document: ${path}`)
   }
-  return { version: 2, default: defaultGate, gates }
+  return { version: 2, default: defaultGate, gates, ...readPropagationMetadata(object, path) }
 }
 
 function writeDoc(path: string, doc: McpVisibilityDocument): void {
   mkdirSync(join(path, '..'), { recursive: true })
   const temp = `${path}.${randomUUID()}.tmp`
-  writeFileSync(temp, `${JSON.stringify({ version: 2, default: doc.default, gates: doc.gates }, null, 2)}\n`, { mode: 0o600 })
+  writeFileSync(temp, `${JSON.stringify({ version: 2, default: doc.default, gates: doc.gates, ...readPropagationMetadata(doc, path) }, null, 2)}\n`, { mode: 0o600 })
   renameSync(temp, path)
 }
 
@@ -204,18 +205,6 @@ function resolvedLayer(query: McpCatalogQuery): McpLayer {
   return 'global'
 }
 
-function applyGate(
-  server: string,
-  document: McpVisibilityDocument | undefined,
-  source: McpLayer,
-  fallback: { gate: McpGate; source: McpLayer },
-): { gate: McpGate; source: McpLayer } {
-  if (document === undefined) return fallback
-  const value = (Object.hasOwn(document.gates, server) ? document.gates[server] : undefined) ?? document.default
-  if (value === 'inherit') return fallback
-  return { gate: value, source }
-}
-
 export class McpHub {
   constructor(readonly paths: { readonly storeDir: string }) {
     mkdirSync(this.paths.storeDir, { recursive: true })
@@ -250,9 +239,7 @@ export class McpHub {
     const global = readDoc(this.globalPath(), 'global')
     const project = normalizedFolder === undefined ? undefined : readDoc(this.projectPath(normalizedFolder), 'project')
     const session = sessionId === undefined || sessionId === '' ? undefined : readDoc(this.sessionPath(sessionId), 'session')
-    const globalState = applyGate(server, global, 'global', { gate: 'on', source: 'global' })
-    const projectState = applyGate(server, project, 'project', globalState)
-    return applyGate(server, session, 'session', projectState)
+    return propagatedGate(server, [['global', global], ['project', project], ['session', session]])
   }
 
   hiddenServers(sessionId?: string, folder?: string, servers?: readonly string[]): Set<string> {
@@ -262,6 +249,28 @@ export class McpHub {
       if (this.effectiveGate(server, sessionId, folder).gate === 'off') hidden.add(server)
     }
     return hidden
+  }
+
+  /**
+   * Resolve one server through the complete inheritance chain, whichever layer
+   * is being edited. The panel's display and the runtime's enforce/guard path
+   * must read the same value: a Project or Chat override has to change what the
+   * panel shows, because it already changes what the model may call. A layer
+   * that is not part of the query simply restricts nothing: reading `global`
+   * reports the global default alone (no folder was chosen, so no Project row
+   * can apply), `project` composes Global→Project, and `session` composes
+   * Global→Project→Chat.
+   * @param name - MCP server name.
+   * @param layer - the layer being edited or observed.
+   * @param sessionId - chat whose Chat document participates (session layer only).
+   * @param folder - normalized workspace folder whose Project document participates.
+   * @returns the effective gate plus the layer that decided it.
+   */
+  private gateState(name: string, layer: McpLayer, sessionId?: string, folder?: string): { gate: McpGate; source: McpLayer } {
+    const global = readDoc(this.globalPath(), 'global')
+    const project = layer === 'global' || folder === undefined ? undefined : readDoc(this.projectPath(folder), 'project')
+    const session = layer !== 'session' || sessionId === undefined ? undefined : readDoc(this.sessionPath(sessionId), 'session')
+    return propagatedGate(name, [['global', global], ['project', project], ['session', session]])
   }
 
   catalog(
@@ -278,16 +287,7 @@ export class McpHub {
     const counts = serversFromToolNames(toolNames, servers)
     const views: McpServerView[] = [...counts.entries()]
       .map(([name, tools]) => {
-        const global = readDoc(this.globalPath(), 'global')
-        const project = layer === 'global' || folder === undefined
-          ? undefined
-          : readDoc(this.projectPath(folder), 'project')
-        const session = layer !== 'session' || query.sessionId === undefined
-          ? undefined
-          : readDoc(this.sessionPath(query.sessionId), 'session')
-        const globalState = applyGate(name, global, 'global', { gate: 'on', source: 'global' })
-        const projectState = applyGate(name, project, 'project', globalState)
-        const state = applyGate(name, session, 'session', projectState)
+        const state = this.gateState(name, layer, query.sessionId, folder)
         return { name, tools, gate: state.gate, source: state.source }
       })
       .sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0))
@@ -299,7 +299,11 @@ export class McpHub {
     const folder = optionalFolder(request.folder)
     const path = this.documentPath(request.layer, request.sessionId, folder)
     const current = readDoc(path, request.layer)
-    writeDoc(path, { ...current, gates: { ...current.gates, [request.server]: request.on ? 'on' : 'off' } })
+    const revision = nextPropagationRevision(this.paths.storeDir)
+    writeDoc(path, { ...current,
+      gates: { ...current.gates, [request.server]: request.on ? 'on' : 'off' },
+      gateRevisions: { ...current.gateRevisions, [request.server]: revision },
+    })
   }
 
   inherit(request: McpInherit): void {

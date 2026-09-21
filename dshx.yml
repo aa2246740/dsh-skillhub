@@ -14,3 +14,4 @@ hotReload:
     - src/mcp-runtime.ts
     - src/mcp.ts
     - src/provider.ts
+    - src/propagation.ts

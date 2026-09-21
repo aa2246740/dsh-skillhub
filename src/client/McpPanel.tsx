@@ -1,29 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
-import {
-  Button,
-  IconCordisPluginOutline14,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Button, IconCordisPluginOutline14, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LayerName } from './catalog-api.ts'
 import type { SkillHubKey } from './locales.ts'
-import {
-  GateSwitch,
-  gateWord,
-  sourceLabel,
-  type SkillHubSurface,
-} from './SkillHubPanel.tsx'
+import { GateSwitch, gateWord, notifyCatalogChanged, useCatalogRefresh, type SkillHubSurface } from './SkillHubPanel.tsx'
 import css from './SkillHubPanel.module.css'
 
-type Catalog = {
-  servers: {
-    name: string
-    tools: number
-    gate: 'on' | 'off'
-    source: LayerName
-    supported: boolean
-  }[]
-}
-
+type Catalog = { servers: { name: string; tools: number; gate: 'on' | 'off'; source: LayerName; supported: boolean }[] }
+export interface McpBulkActions { allOn: () => void; allOff: () => void; disabled: boolean }
 export interface McpPanelProps {
   surface: SkillHubSurface
   layer: LayerName
@@ -33,6 +17,7 @@ export interface McpPanelProps {
   canWriteProject: boolean
   layerReady: boolean
   onServerCountChange?: ((count: number) => void) | undefined
+  onBulkActions?: ((actions: McpBulkActions | undefined) => void) | undefined
   t: Translate<SkillHubKey>
 }
 
@@ -41,227 +26,123 @@ export function McpPanel(props: McpPanelProps) {
   const [catalog, setCatalog] = useState<Catalog>()
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const pending = useRef(false)
   const generation = useRef(0)
+  const inFlight = useRef(0)
   const tRef = useRef(t)
   tRef.current = t
   const onCountRef = useRef(props.onServerCountChange)
   onCountRef.current = props.onServerCountChange
-
-  const query = {
-    layer,
-    ...(sessionId ? { sessionId } : {}),
-    ...(folder ? { folder } : {}),
-  }
+  const query = { layer, ...(sessionId ? { sessionId } : {}), ...(folder ? { folder } : {}) }
   const key = JSON.stringify(query)
+  const activeKey = useRef(key)
+  activeKey.current = key
 
   const request = useCallback(async (path: string, body?: object, signal?: AbortSignal) => {
-    const copy = tRef.current
     const response = await fetch(`/skillhub/mcp/${path}`, body === undefined
       ? { ...(signal ? { signal } : {}) }
       : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
-    if (!response.headers.get('content-type')?.includes('application/json')) {
-      throw new Error(copy('mcp.unavailable'))
-    }
+    if (!response.headers.get('content-type')?.includes('application/json')) throw new Error(tRef.current('mcp.unavailable'))
     const data = await response.json() as Catalog & { error?: string }
     if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`)
-    if (!Array.isArray(data.servers)) throw new Error(copy('mcp.unavailable'))
+    if (!Array.isArray(data.servers)) throw new Error(tRef.current('mcp.unavailable'))
     return data
   }, [])
-
-  const applyCatalog = (data: Catalog) => {
-    setCatalog(data)
-    onCountRef.current?.(data.servers.length)
-  }
-
-  const load = useCallback((clear: boolean) => {
+  const load = useCallback(() => {
     const current = ++generation.current
     const controller = new AbortController()
-    if (clear) setCatalog(undefined)
-    setError(undefined)
+    inFlight.current += 1
+    setRefreshing(true)
+    const done = () => {
+      inFlight.current -= 1
+      if (inFlight.current === 0) setRefreshing(false)
+    }
     void request(`catalog?${new URLSearchParams(JSON.parse(key) as Record<string, string>)}`, undefined, controller.signal)
       .then(data => {
-        if (current === generation.current) applyCatalog(data)
-      })
-      .catch((caught: Error) => {
-        if (!controller.signal.aborted && current === generation.current) {
-          setError(caught.message)
+        if (key === activeKey.current && current === generation.current) {
+          setCatalog(data)
+          onCountRef.current?.(data.servers.length)
+          setError(undefined)
         }
-      })
-    return () => {
-      ++generation.current
-      controller.abort()
-    }
+      }).catch((caught: Error) => {
+        if (!controller.signal.aborted && key === activeKey.current && current === generation.current) setError(caught.message)
+      }).finally(done)
+    return () => controller.abort()
   }, [key, request])
+  // Keep the previous catalog mounted while the new layer's read is in flight:
+  // clearing it here was what made switching layers flash a skeleton.
+  useEffect(() => { setError(undefined); return load() }, [load])
+  useCatalogRefresh(load)
 
-  useEffect(() => {
-    return load(catalog === undefined)
-    // Reload only when the query key changes, not on every parent render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- catalog is the first-paint gate, not a fetch input
-  }, [key, load])
-
-  const update = async (server: string, on?: boolean) => {
-    const current = generation.current
-    setBusy(true)
-    setError(undefined)
-    try {
-      const data = await request(
-        on === undefined ? 'inherit' : 'toggle',
-        { ...query, server, ...(on === undefined ? {} : { on }) },
-      )
-      if (current === generation.current) applyCatalog(data)
-    } catch (caught) {
-      if (current === generation.current) setError(String(caught))
-    } finally {
-      if (current === generation.current) setBusy(false)
-    }
-  }
-
-  const bulkUpdate = async (on?: boolean) => {
-    if (!catalog?.servers) return
-    const current = generation.current
+  const update = async (servers: readonly string[], on: boolean) => {
+    if (pending.current || !layerReady) return
+    pending.current = true
+    ++generation.current
     setBusy(true)
     setError(undefined)
     try {
       let latest: Catalog | undefined
-      for (const server of catalog.servers) {
-        latest = await request(
-          on === undefined ? 'inherit' : 'toggle',
-          { ...query, server: server.name, ...(on === undefined ? {} : { on }) },
-        )
+      for (const server of servers) latest = await request('toggle', { ...query, server, on })
+      if (latest && key === activeKey.current) {
+        setCatalog(latest)
+        onCountRef.current?.(latest.servers.length)
       }
-      if (latest && current === generation.current) applyCatalog(latest)
     } catch (caught) {
-      if (current === generation.current) setError(String(caught))
+      if (key === activeKey.current) setError(String(caught))
     } finally {
-      if (current === generation.current) setBusy(false)
+      pending.current = false
+      setBusy(false)
+      // Even a partially completed bulk write must refresh the other surfaces.
+      notifyCatalogChanged(layer)
     }
   }
-
-  const servers = catalog?.servers ?? []
-  const onCount = servers.filter(s => s.gate === 'on').length
-  const offCount = servers.filter(s => s.gate === 'off').length
-  const hasOverrides = layer !== 'global' && servers.some(s => s.source === layer)
+  const bulkActions = useMemo<McpBulkActions | undefined>(() => {
+    if (!catalog?.servers.length) return undefined
+    const names = catalog.servers.filter(server => server.supported || server.gate === 'off').map(server => server.name)
+    return {
+      allOn: () => void update(catalog.servers.map(server => server.name), true),
+      allOff: () => void update(names, false),
+      disabled: !layerReady || busy,
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalog, key, layerReady, busy])
+  useEffect(() => {
+    props.onBulkActions?.(bulkActions)
+    return () => props.onBulkActions?.(undefined)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bulkActions])
 
   return (
-    <div className={css.mcpContainer} data-ud-check="skillhub-mcp-container">
-      <header className={css.header} data-ud-check="skillhub-mcp-header">
-        <div className={css.titleRow}>
-          <div className={css.titleBlock}>
-            <h2 className={css.title}>
-              {t(props.surface === 'page' ? 'mcp.title.global' : 'mcp.title.context')}
-            </h2>
-            <p className={css.lede}>
-              {t(props.surface === 'page' ? 'mcp.lede.global' : 'mcp.lede.context')}
-            </p>
-          </div>
-          {servers.length > 0 ? (
-            <div className={css.headerActions}>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!layerReady || busy}
-                onClick={() => void bulkUpdate(false)}
-              >
-                {t('allOff')}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!layerReady || busy}
-                onClick={() => void bulkUpdate(true)}
-              >
-                {t('allOn')}
-              </Button>
-              {hasOverrides ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={!layerReady || busy}
-                  onClick={() => void bulkUpdate(undefined)}
-                >
-                  {t('allInherit')}
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-        {servers.length > 0 ? (
-          <div className={css.counts} aria-live="polite">
-            <span>{t('count.on', { n: onCount })}</span>
-            <span>{t('count.off', { n: offCount })}</span>
-          </div>
-        ) : null}
-      </header>
-
-      <div className={css.body} data-ud-check="skillhub-mcp-body">
-        {error !== undefined ? (
-          <div className={css.bannerRow}>
-            <p className={css.error} role="alert">{error}</p>
-            <Button variant="outline" size="sm" onClick={() => void load(false)}>{t('error.retry')}</Button>
-          </div>
-        ) : null}
-
-        {catalog === undefined && error === undefined ? (
-          <div className={css.skeleton} aria-label={t('loading')}>
-            <div className={css.skel} />
-            <div className={css.skel} />
-          </div>
-        ) : null}
-
-        {catalog !== undefined && servers.length === 0 ? (
-          <div className={css.emptyCard} data-ud-check="skillhub-mcp-empty">
-            <div className={css.emptyIcon}>
-              <IconCordisPluginOutline14 size={28} />
-            </div>
-            <h3 className={css.emptyTitle}>{t('mcp.empty.title')}</h3>
-            <p className={css.emptyDesc}>{t('mcp.empty.desc')}</p>
-          </div>
-        ) : null}
-
-        {catalog !== undefined && servers.length > 0 ? (
-          <div className={css.mcpList}>
-            {servers.map(server => (
-              <div
-                key={server.name}
-                className={`${css.row} ${css.leaf}`}
-                style={{ '--depth': '0' } as CSSProperties}
-              >
-                <span className={css.chevronGhost} />
-                <GateSwitch
-                  gate={server.gate}
-                  label={t('switch.mcp', {
-                    name: server.name,
-                    state: gateWord(t, server.gate),
-                  })}
-                  disabled={!layerReady || busy || (!server.supported && server.gate === 'on')}
-                  onChange={on => void update(server.name, on)}
-                />
-                <div className={css.name}>
-                  <span className={css.nameText}>{server.name}</span>
-                  <span className={css.badge}>{t('mcp.tools', { n: server.tools })}</span>
-                  {layer !== 'global' && server.source === layer ? (
-                    <span className={css.source}>{sourceLabel(t, server.source)}</span>
-                  ) : null}
-                  {!server.supported ? (
-                    <span className={css.unsupported}>{t('mcp.unsupported')}</span>
-                  ) : null}
-                </div>
-                {layer !== 'global' && server.source === layer && server.supported ? (
-                  <button
-                    type="button"
-                    className={css.inherit}
-                    disabled={busy}
-                    aria-label={t('mcp.inherit.server', { name: server.name })}
-                    onClick={() => void update(server.name, undefined)}
-                  >
-                    {t('inherit.action')}
-                  </button>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </div>
+    <div className={css.mcpBody} data-ud-check="skillhub-mcp-body" aria-busy={busy || refreshing}>
+      {error !== undefined ? <div className={css.bannerRow}>
+        <p className={css.error} role="alert">{error}</p>
+        <Button variant="outline" size="sm" onClick={() => load()}>{t('error.retry')}</Button>
+      </div> : null}
+      {catalog === undefined && error === undefined ? <div className={css.skeleton} aria-label={t('loading')}>
+        <div className={css.skel} /><div className={css.skel} /><div className={css.skel} />
+      </div> : null}
+      {catalog !== undefined && catalog.servers.length === 0 ? <div className={css.emptyCard} data-ud-check="skillhub-mcp-empty">
+        <div className={css.emptyIcon}><IconCordisPluginOutline14 size={28} /></div>
+        <h3 className={css.emptyTitle}>{t('mcp.empty.title')}</h3>
+        <p className={css.emptyDesc}>{t('mcp.empty.desc')}</p>
+      </div> : null}
+      {catalog !== undefined && catalog.servers.length > 0 ? <div className={css.mcpList}>
+        {catalog.servers.map(server => <div key={server.name} className={css.row} data-leaf="">
+          <span className={css.chevronGhost} />
+          <div className={css.cell}><div className={css.name}>
+            <span className={css.nameText}>{server.name}</span>
+            <Tag tone="quiet">{t('mcp.tools', { n: server.tools })}</Tag>
+            {!server.supported ? <Tag tone="warning">{t('mcp.unsupported')}</Tag> : null}
+          </div></div>
+          <div className={css.actions}><GateSwitch
+            gate={server.gate}
+            label={t('switch.mcp', { name: server.name, state: gateWord(t, server.gate) })}
+            disabled={!layerReady || busy || (!server.supported && server.gate === 'on')}
+            onChange={on => void update([server.name], on)}
+          /></div>
+        </div>)}
+      </div> : null}
     </div>
   )
 }

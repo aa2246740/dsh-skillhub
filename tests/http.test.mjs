@@ -8,7 +8,8 @@ import { SkillHub } from '../lib/types/hub.js'
 import { handleSkillHubHttp } from '../lib/types/http.js'
 
 function request(path, body, method = 'POST') {
-  const req = Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))])
+  const payload = body === undefined ? [] : [Buffer.isBuffer(body) ? body : Buffer.from(JSON.stringify(body))]
+  const req = Readable.from(payload)
   req.method = method
   req.url = path
   req.headers = { host: '127.0.0.1' }
@@ -105,4 +106,46 @@ test('MCP routes enforce authentication and validate writes before dispatch', as
   res=response()
   await handle(request('/skillhub/mcp/toggle',{layer:'global',server:'all',on:false}),res)
   assert.equal(res.result.status,200);assert.equal(writes,1)
+})
+
+test('a corrupted store answers 500 while client mistakes stay 400', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skillhub-http-'))
+  const store = join(root, 'store')
+  const hub = new SkillHub({ agentHome: join(root, 'agent'), dshHome: join(root, 'dsh'), storeDir: store })
+  await writeFile(join(store, 'global.json'), '{ not valid json')
+  const handle = handleSkillHubHttp(hub, () => {}, () => undefined)
+
+  const res = response()
+  await handle(request('/skillhub/toggle', { layer: 'global', kind: 'all', on: false }), res)
+  assert.equal(res.result.status, 500)
+  assert.match(JSON.parse(res.result.body).error, /SkillHub visibility document/)
+
+  const bad = response()
+  await handle(request('/skillhub/toggle', { layer: 'bogus', kind: 'all', on: false }), bad)
+  assert.equal(bad.result.status, 400)
+  assert.deepEqual(JSON.parse(bad.result.body), { error: 'invalid layer' })
+})
+
+test('a body larger than 1 MiB is rejected 400 before parsing', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skillhub-http-'))
+  const hub = new SkillHub({ agentHome: join(root, 'agent'), dshHome: join(root, 'dsh'), storeDir: join(root, 'store') })
+  const handle = handleSkillHubHttp(hub, () => {}, () => undefined)
+  const res = response()
+
+  await handle(request('/skillhub/toggle', Buffer.alloc(1024 * 1024 + 1, 0x20)), res)
+
+  assert.equal(res.result.status, 400)
+  assert.match(JSON.parse(res.result.body).error, /invalid JSON/i)
+})
+
+test('malformed JSON is a 400 client error, not a 500', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'skillhub-http-'))
+  const hub = new SkillHub({ agentHome: join(root, 'agent'), dshHome: join(root, 'dsh'), storeDir: join(root, 'store') })
+  const handle = handleSkillHubHttp(hub, () => {}, () => undefined)
+  const res = response()
+
+  await handle(request('/skillhub/toggle', Buffer.from('{"layer":')), res)
+
+  assert.equal(res.result.status, 400)
+  assert.match(JSON.parse(res.result.body).error, /invalid JSON/i)
 })

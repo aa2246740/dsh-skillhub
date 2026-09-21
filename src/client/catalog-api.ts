@@ -10,7 +10,7 @@ export type PackLink =
   | { kind: 'broken-symlink'; target: string }
 
 export type BrokenReason = {
-  kind: 'missing-symlink-target' | 'unreadable-skill' | 'invalid-frontmatter' | 'invalid-name' | 'empty-pack'
+  kind: 'missing-symlink-target' | 'unreadable-skill' | 'invalid-frontmatter' | 'invalid-name' | 'empty-pack' | 'symlink-cycle'
   target?: string
   message?: string
   raw?: string
@@ -22,6 +22,12 @@ export type CatalogPayload = {
   collisions: { name: string; skills: string[] }[]
   broken: { path: string; reason: BrokenReason }[]
   layer?: LayerName
+  /**
+   * True when every `gate` below is the resolved Global→Project→Chat value the
+   * model actually runs with, so `source` names the layer that decided it.
+   * False only for a raw single-layer read.
+   */
+  resolved: boolean
   legacySessionSnapshot: boolean
 }
 

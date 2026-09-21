@@ -38,8 +38,14 @@ export function installMcpVisibility(ctx: Context, hub: McpHub, discover = () =>
   const problematic = (server: string, servers: string[]) => {
     if (servers.some(other => other !== server && (server.startsWith(`${other}__`) || other.startsWith(`${server}__`)))) return true
     for (const agent of agents.keys()) {
-      for (const tool of (agent.ctx.get('tools') as Tools).schemas(agent)) {
-        if (tool.name.startsWith(`mcp__${server}__`) && tools.get(tool.name) !== tools.get(tool.name, agent)) return true
+      // A disposing agent context can throw here; "cannot prove clean" means
+      // the server is reported problematic rather than trusted.
+      try {
+        for (const tool of (agent.ctx.get('tools') as Tools).schemas(agent)) {
+          if (tool.name.startsWith(`mcp__${server}__`) && tools.get(tool.name) !== tools.get(tool.name, agent)) return true
+        }
+      } catch {
+        return true
       }
     }
     return false
@@ -71,6 +77,8 @@ export function installMcpVisibility(ctx: Context, hub: McpHub, discover = () =>
     const state = { lift: () => {}, guard: () => {}, signature: '[]', dispose: () => {} }
     agents.set(agent, state)
     state.guard = scoped.guard(exec => {
+      // discover() runs on every exec so attribution always sees the live
+      // server set, not a snapshot from attach time.
       const owner = attributeMcpTool(exec.name, discover())
       const id = identity(agent)
       return owner && hub.effectiveGate(owner, id.sessionId, id.folder).gate === 'off'

@@ -1,3 +1,4 @@
+import { type PropagationMetadata } from './propagation.ts';
 export declare function isHostSkillName(name: string): boolean;
 export type HomeKind = 'agent' | 'dsh';
 export type Gate = 'on' | 'off';
@@ -11,7 +12,7 @@ export type SkillId = string & {
 export type PackId = string & {
     readonly __brand: 'PackId';
 };
-export type VisibilityDocument = {
+export type VisibilityDocument = PropagationMetadata & {
     readonly version: 2;
     readonly default: LayerGate;
     readonly gates: Readonly<Record<string, LayerGate>>;
@@ -41,6 +42,9 @@ export type BrokenReason = {
 } | {
     readonly kind: 'invalid-name';
     readonly raw: string;
+} | {
+    readonly kind: 'symlink-cycle';
+    readonly target: string;
 } | {
     readonly kind: 'empty-pack';
 };
@@ -144,6 +148,13 @@ export interface Catalog {
     readonly collisions: readonly Collision[];
     readonly broken: readonly BrokenEntry[];
     readonly layer?: VisibilityLayer;
+    /**
+     * True when gates were resolved through the whole inheritance chain (Global,
+     * then Project, then Chat). `layer` still names the layer whose document the
+     * user is editing while each entry's `source` names the layer that actually
+     * decided its gate, so an inherited override stays attributable.
+     */
+    readonly resolved?: boolean;
     readonly legacySessionSnapshot?: boolean;
 }
 export interface ResolveInput {
@@ -152,6 +163,13 @@ export interface ResolveInput {
     readonly global?: VisibilityDocument;
     readonly project?: VisibilityDocument;
     readonly session?: VisibilityDocument;
+    /**
+     * Fold Project and Chat into the Global document first, so every leaf reports
+     * the gate the runtime would enforce no matter which layer the reader is
+     * editing. Without it the layers stay separate and `gateStateOf` already
+     * lets a deeper layer win on top of the global default.
+     */
+    readonly composeChain?: boolean;
 }
 export declare function resolveCatalog(input: ResolveInput): Catalog;
 export declare function findGroupByRel(node: PackNode | GroupNode, rel: string): PackNode | GroupNode | undefined;
