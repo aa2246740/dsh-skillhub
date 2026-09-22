@@ -5,13 +5,13 @@
 *为 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness) 打造的本地技能与 MCP 服务统一开关管理插件*
 
 ```bash
-dsh plugin --profile web add github:aa2246740/dsh-skillhub#v1.0.0
+dsh plugin --profile web add github:aa2246740/dsh-skillhub
 ```
 
 已包含编译产物，安装无需 pnpm 或本地构建。
 
-[![GitHub Release](https://img.shields.io/badge/release-v1.0.0-blue?style=flat-square)](https://github.com/aa2246740/dsh-skillhub/releases)
-[![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-0.1.5--rc.2-4F46E5?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
+[![GitHub Release](https://img.shields.io/badge/release-v1.0.1-blue?style=flat-square)](https://github.com/aa2246740/dsh-skillhub/releases)
+[![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-0.1.5--rc.3-4F46E5?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.1.5-rc.3)
 [![License](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/aa2246740/dsh-skillhub?style=flat-square)](https://github.com/aa2246740/dsh-skillhub/stargazers)
 
@@ -51,10 +51,10 @@ dsh plugin --profile web add github:aa2246740/dsh-skillhub#v1.0.0
 
 ```bash
 # 如果已全局安装 dsh CLI
-dsh plugin --profile web add "github:aa2246740/dsh-skillhub#v1.0.0"
+dsh plugin --profile web add github:aa2246740/dsh-skillhub
 
 # 或者使用 npx
-npx @deepseek-ai/dsh plugin --profile web add "github:aa2246740/dsh-skillhub#v1.0.0"
+npx @deepseek-ai/dsh@0.1.5-rc.3 plugin --profile web add github:aa2246740/dsh-skillhub
 ```
 
 ### 2. 重启生效
@@ -101,7 +101,7 @@ dsh web
 ### 更新至最新版本
 
 ```bash
-dsh plugin --profile web add "github:aa2246740/dsh-skillhub#v1.0.0"
+dsh plugin --profile web add github:aa2246740/dsh-skillhub
 ```
 
 ### 卸载插件
