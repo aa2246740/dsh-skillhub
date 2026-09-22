@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1
+
+### 兼容
+
+- Peer 与开发依赖改为 `^0.1.5-rc.3` / `0.1.5-rc.3`。`^0.1.2-rc.1` 按 npm 预发布规则不接受 `@deepseek-ai/dsh@0.1.5-rc.3`，也不指向 `0.1.7` alpha。
+- 客户端补上 `ui-session` 与 `ui-settings`：设置页槽位和对话 `sessionId` / `useSessions` 由这两个包声明。
+
 ## 1.0.0
 
 首个正式版。
