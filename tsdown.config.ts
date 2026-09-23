@@ -8,7 +8,7 @@ const ID = 'dsh-skillhub'
 const clientEntry = 'src/client/index.tsx'
 const packageRoot = dirname(fileURLToPath(import.meta.url))
 
-// Official dsh-v0.1.5-rc.2 packages/client/web/src/platform.ts
+// Official dsh-v0.1.5-rc.3 packages/client/web/src/platform.ts
 const PLATFORM_MODULES = [
   'react',
   'react/jsx-runtime',
