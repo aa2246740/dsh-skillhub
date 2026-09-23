@@ -42,16 +42,17 @@ test('ships the prebuilt web client without machine paths', () => {
   assert.doesNotMatch(client, /(?:^|[\s"'`=(])(?:\/(?:Users|home|opt|var|tmp|private|agent)\/|[A-Za-z]:\\)/)
 })
 
-test('peer range accepts Harness 0.1.5-rc.3 and not 0.1.7-alpha', () => {
+test('peer range accepts Harness 0.1.7-rc.1 and not 0.1.7-alpha', () => {
   const pkg = JSON.parse(read('package.json'))
   const peers = Object.entries(pkg.peerDependencies).filter(([name]) => name.startsWith('@deepseek-ai/dsh-'))
   assert.ok(peers.length >= 11)
   for (const [name, range] of peers) {
-    assert.equal(range, '^0.1.5-rc.2', name)
-    assert.equal(pkg.devDependencies[name], '0.1.5-rc.3', name)
+    assert.equal(range, '>=0.1.7-rc.1 <0.1.8', name)
+    assert.equal(pkg.devDependencies[name], '0.1.7-rc.1', name)
   }
-  assert.equal(JSON.stringify(pkg).includes('0.1.2-rc.1'), false)
+  assert.equal(JSON.stringify(pkg).includes('0.1.5-rc'), false)
   assert.equal(JSON.stringify(pkg).includes('0.1.7-alpha'), false)
+  assert.equal(pkg.version, '1.0.2')
 })
 
 test('leads the README with the official one-liner', () => {

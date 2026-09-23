@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, IconCordisPluginOutline14, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconCordisPluginOutlineRegular, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LayerName } from './catalog-api.ts'
 import type { SkillHubKey } from './locales.ts'
@@ -123,7 +123,7 @@ export function McpPanel(props: McpPanelProps) {
         <div className={css.skel} /><div className={css.skel} /><div className={css.skel} />
       </div> : null}
       {catalog !== undefined && catalog.servers.length === 0 ? <div className={css.emptyCard} data-ud-check="skillhub-mcp-empty">
-        <div className={css.emptyIcon}><IconCordisPluginOutline14 size={28} /></div>
+        <div className={css.emptyIcon}><IconCordisPluginOutlineRegular size={28} /></div>
         <h3 className={css.emptyTitle}>{t('mcp.empty.title')}</h3>
         <p className={css.emptyDesc}>{t('mcp.empty.desc')}</p>
       </div> : null}

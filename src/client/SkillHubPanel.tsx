@@ -1,8 +1,8 @@
 import { McpPanel, type McpBulkActions } from './McpPanel.tsx'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
-  Button, IconChevronRightOutline14, IconCordisPluginOutline14, IconEllipsisOutline16,
-  IconSearchOutline16, IconSkillOutline16, IconWarningOutline16, Input, Menu, Pill,
+  Button, IconChevronRightOutlineRegular, IconCordisPluginOutlineRegular, IconEllipsisOutlineRegular,
+  IconSearchOutlineRegular, IconSkillOutlineRegular, IconWarningOutlineRegular, Input, Menu, Pill,
   Tag, Toast, Tooltip, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
@@ -257,11 +257,11 @@ export function SkillHubPanel(props: {
     <div className={css.toolbar}>
       <div className={css.tabs} role="tablist" aria-label={t('tab.aria')}>
         <Pill role="tab" aria-selected={tab === 'skills'} active={tab === 'skills'} onClick={() => setTab('skills')}>
-          <IconSkillOutline16 size={13} /><span>{t('tab.skills')}</span>
+          <IconSkillOutlineRegular size={13} /><span>{t('tab.skills')}</span>
           {allSkillCount > 0 ? <span className={css.pillCount}>{allSkillCount}</span> : null}
         </Pill>
         <Pill role="tab" aria-selected={tab === 'mcp'} active={tab === 'mcp'} onClick={() => setTab('mcp')}>
-          <IconCordisPluginOutline14 size={13} /><span>{t('tab.mcp')}</span>
+          <IconCordisPluginOutlineRegular size={13} /><span>{t('tab.mcp')}</span>
           {mcpServerCount !== undefined && mcpServerCount > 0 ? <span className={css.pillCount}>{mcpServerCount}</span> : null}
         </Pill>
       </div>
@@ -273,14 +273,14 @@ export function SkillHubPanel(props: {
             onClick={() => setLayer(name)}>{layerLabel(t, name)}</button>)}
         </div> : null}
         <Menu open={moreOpen} onClose={() => setMoreOpen(false)} onSelect={onMoreSelect} items={moreItems} align="end" compact portal
-          anchor={<Button variant="ghost" size="sm" icon={<IconEllipsisOutline16 size={16} />} aria-label={t('more')} title={t('more')}
+          anchor={<Button variant="ghost" size="sm" icon={<IconEllipsisOutlineRegular size={16} />} aria-label={t('more')} title={t('more')}
             onClick={() => setMoreOpen(value => !value)} />} />
       </div>
     </div>
     {tab === 'mcp' ? <McpPanel surface={props.surface} layer={layer} sessionId={sessionId} folder={folder}
       canWriteSession={canWriteSession} canWriteProject={canWriteProject} layerReady={layerReady}
       onServerCountChange={setMcpServerCount} onBulkActions={setMcpBulk} t={t} /> : <>
-      <label className={css.search}><Input className={css.field ?? ''} icon={<IconSearchOutline16 size={16} />}
+      <label className={css.search}><Input className={css.field ?? ''} icon={<IconSearchOutlineRegular size={16} />}
         value={query} placeholder={t('search.placeholder')} aria-label={t('search.placeholder')}
         onChange={event => setQuery(event.currentTarget.value)} /></label>
       <div className={css.body} data-ud-check="skillhub-tree" data-ud-role="panel">
@@ -295,7 +295,7 @@ export function SkillHubPanel(props: {
           <div className={css.skel} /><div className={css.skel} /><div className={css.skel} />
         </div> : null}
         {catalog !== undefined && allSkillCount === 0 && needle === '' ? <div className={css.emptyCard} data-ud-check="skillhub-skills-empty">
-          <div className={css.emptyIcon}><IconSkillOutline16 size={28} /></div>
+          <div className={css.emptyIcon}><IconSkillOutlineRegular size={28} /></div>
           <h4 className={css.emptyTitle}>{t('skills.empty.title')}</h4><p className={css.emptyDesc}>{t('skills.empty.desc')}</p>
         </div> : null}
         {catalog !== undefined && (allSkillCount > 0 || needle !== '') ? catalog.tree.map(home => {
@@ -314,7 +314,7 @@ export function SkillHubPanel(props: {
           return <section key={home.home} className={css.home} aria-label={label}>
             {!hideHomeChrome ? <div className={css.row} style={{ '--depth': '0' } as CSSProperties} data-folder="">
               <button type="button" className={css.chevron} aria-expanded={homeOpen}
-                aria-label={t(homeOpen ? 'collapse' : 'expand', { name: label })} onClick={toggleOpen}><IconChevronRightOutline14 size={14} /></button>
+                aria-label={t(homeOpen ? 'collapse' : 'expand', { name: label })} onClick={toggleOpen}><IconChevronRightOutlineRegular size={14} /></button>
               <div className={css.cell}><button type="button" className={css.nameBtn} title={home.path} onClick={toggleOpen}>
                 <span className={css.name}><span className={css.nameText}>{label}</span>
                   {homeIds.length > 1 ? <Tag tone="quiet">{skillCountLabel(t, homeIds.length)}</Tag> : null}
@@ -341,7 +341,7 @@ function TreeNode(props: {
   const style = { '--depth': String(props.depth) } as CSSProperties
   if (node.kind === 'broken') return <div className={css.row} data-broken="" style={style}>
     <span className={css.chevronGhost} /><div className={css.cell}><div className={css.name}>
-      <IconWarningOutline16 size={14} /><span className={css.nameText}>{node.name}</span>
+      <IconWarningOutlineRegular size={14} /><span className={css.nameText}>{node.name}</span>
       <Tag tone="danger">{brokenCopy(t, node.reason)}</Tag>
     </div></div>
   </div>
@@ -356,7 +356,7 @@ function TreeNode(props: {
   return <div>
     <div className={css.row} style={style} data-folder={children.length ? '' : undefined}>
       {children.length ? <button type="button" className={css.chevron} aria-expanded={open}
-        aria-label={t(open ? 'collapse' : 'expand', { name: node.name })} onClick={toggleOpen}><IconChevronRightOutline14 size={14} /></button>
+        aria-label={t(open ? 'collapse' : 'expand', { name: node.name })} onClick={toggleOpen}><IconChevronRightOutlineRegular size={14} /></button>
         : <span className={css.chevronGhost} />}
       <div className={css.cell}><button type="button" className={css.nameBtn} onClick={toggleOpen} disabled={!children.length}>
         <span className={css.name}><span className={css.nameText}>{node.name}</span>

@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-settings'
 import type { SkillProviderControl } from '@deepseek-ai/dsh-skill'
@@ -14,14 +14,13 @@ import { createSkillHubProvider } from './provider.ts'
 export const name = 'dsh-skillhub'
 export const inject = ['skills', 'webServer', 'connection', 'tools', 'agents']
 
-const NS = 'dsh-skillhub'
-
 export interface Config {
-  enabled?: boolean
+  /** Profile field. A settings edit is stored immediately and read on the next Host load. */
+  enabled: Volatile<boolean>
 }
 
-export const Config: z<Config> = z.object({
-  enabled: z.boolean().default(true),
+export const Config = z.object({
+  enabled: z.boolean().default(true).volatile(),
 })
 
 function env(name: string): string | undefined {
@@ -43,18 +42,12 @@ function defaultStoreDir(): string {
 
 export function apply(ctx: Context, config: Config) {
   console.log('[my-plugins/dsh-skillhub] loaded')
-  let source = () => config
-  // The settings section installs even when disabled so the user can
-  // re-enable the plugin; the enabled flag itself applies on reload.
+  // The settings page stays registered when the plugin is disabled so the
+  // enabled field can be turned back on. The running fiber reads it once.
   ctx.inject(['settings'], settingsCtx => {
-    settingsCtx.settings.installSection(ctx, NS, Config, config, {
-      setSource: current => { source = current },
-      onChange: () => {
-        console.log('[dsh-skillhub] enabled=%s applies on reload', String(source().enabled !== false))
-      },
-    })
+    settingsCtx.effect(() => settingsCtx.settings.configure({ auto: true }, ctx.fiber))
   })
-  if (config.enabled === false) {
+  if (config.enabled.get() === false) {
     console.log('[my-plugins/dsh-skillhub] disabled; provider, http, and hooks skipped')
     return
   }
