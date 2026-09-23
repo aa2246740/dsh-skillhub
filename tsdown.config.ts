@@ -8,7 +8,7 @@ const ID = 'dsh-skillhub'
 const clientEntry = 'src/client/index.tsx'
 const packageRoot = dirname(fileURLToPath(import.meta.url))
 
-// Official dsh-v0.1.5-rc.3 packages/client/web/src/platform.ts
+// Official dsh-v0.1.7-rc.1 packages/client/web/src/platform.ts
 const PLATFORM_MODULES = [
   'react',
   'react/jsx-runtime',
@@ -21,7 +21,8 @@ const PLATFORM_MODULES = [
   '@deepseek-ai/dsh-client-ui-dockkit',
 ] as const
 
-const INLINE_SAFE = /^@deepseek-ai\/dsh-(host-apiproxy|file-reference|session|llm|tools|brand|util-workspace-path)(\/|$)/
+// Official packages/client/tsdown.client.ts INLINE_SAFE at dsh-v0.1.7-rc.1.
+const INLINE_SAFE = /^(?:@deepseek-ai\/dsh-(?:file-reference|session|llm|tools|brand|deque|output-retention|typert-protocol|util-crypto|util-values|util-workspace-path)(?:\/|$)|@deepseek-ai\/dsh-token-meter\/client$|@deepseek-ai\/dsh-native-command\/types$|@deepseek-ai\/dsh-host-open-in-app\/shared$|@deepseek-ai\/dsh-plugin-manager\/registry$|@deepseek-ai\/dsh-agent-preset-registry\/display$|@deepseek-ai\/dsh-spill-policy\/notice$)/
 const VENDORED_LIBRARY = /^@deepseek-ai\/(cosmokit|schemastery)(\/|$)/
 const GENERATED_REMOTE = /^@deepseek-ai\/dsh-[a-z0-9]+(?:-[a-z0-9]+)*\/remote$/
 const CSS_MODULE_PREFIX = '\0css-module:'

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  IconSkillOutline16,
+  IconSkillOutlineRegular,
   useAnchoredPosition,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
@@ -9,6 +9,8 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-general/client'
 import { SkillHubPanel } from './SkillHubPanel.tsx'
 import { en, zh, type SkillHubKey } from './locales.ts'
@@ -65,7 +67,7 @@ function SkillHubChip(props: PropsRuntime<'conversation.input.left'> & PropsLoca
   const sessionId = props.sessionId
   // Store rehydration/reconnect windows can transiently deliver a list
   // slice without byId; a throw here unmounts the whole composer input.
-  const folder = props.useSessions(list => list.byId?.[sessionId]?.cwd ?? '')
+  const folder = props.useSessions((list: { readonly byId?: Readonly<Record<string, { readonly cwd?: string } | undefined>> }) => list.byId?.[sessionId]?.cwd ?? '')
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -116,7 +118,7 @@ function SkillHubChip(props: PropsRuntime<'conversation.input.left'> & PropsLoca
         title={props.t('chip.aria')}
         onClick={() => setOpen(value => !value)}
       >
-        <IconSkillOutline16 size={16} />
+        <IconSkillOutlineRegular size={16} />
         <span className={css.triggerLabel}>{props.t('chip')}</span>
       </button>
       {open

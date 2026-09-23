@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.2
+
+### 兼容
+
+- 官方 DeepSeek Harness 依赖范围改为 `>=0.1.7-rc.1 <0.1.8`（tag `dsh-v0.1.7-rc.1`）。npm 默认 semver 不会让 `^0.1.5-rc.3` 接受 `0.1.7-rc.1`。同一范围拒绝 `0.1.7-alpha`。
+- 设置页不再调用已删除的 `settings.installSection`。`enabled` 是 profile 里的 volatile 字段，设置里改完立刻落盘，下次 Host 加载时生效。
+- 客户端图标改用 rc.1 的字重命名（`IconSkillOutlineRegular` 等），尺寸仍由 `size` 指定。
+- `settings.section` 与 composer 的 `sessionId` / `useSessions` 改由 `@deepseek-ai/dsh-client-ui-settings` 和 `@deepseek-ai/dsh-client-ui-session` 声明，并加入 `dsh.client.inject`。
+- 开发依赖里的 Cordis 钉在 `4.0.4`，Schemastery 钉在 `3.18.4`，与 rc.1 宿主一致。
+
 ## 1.0.1
 
 ### 兼容
