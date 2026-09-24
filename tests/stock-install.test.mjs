@@ -42,17 +42,25 @@ test('ships the prebuilt web client without machine paths', () => {
   assert.doesNotMatch(client, /(?:^|[\s"'`=(])(?:\/(?:Users|home|opt|var|tmp|private|agent)\/|[A-Za-z]:\\)/)
 })
 
-test('peer range accepts Harness 0.1.7-rc.1 and not 0.1.7-alpha', () => {
+test('peer range accepts Harness 0.1.7-rc.2 and not 0.1.7-alpha', () => {
   const pkg = JSON.parse(read('package.json'))
   const peers = Object.entries(pkg.peerDependencies).filter(([name]) => name.startsWith('@deepseek-ai/dsh-'))
   assert.ok(peers.length >= 11)
   for (const [name, range] of peers) {
     assert.equal(range, '>=0.1.7-rc.1 <0.1.8', name)
-    assert.equal(pkg.devDependencies[name], '0.1.7-rc.1', name)
+    assert.equal(pkg.devDependencies[name], '0.1.7-rc.2', name)
   }
   assert.equal(JSON.stringify(pkg).includes('0.1.5-rc'), false)
   assert.equal(JSON.stringify(pkg).includes('0.1.7-alpha'), false)
-  assert.equal(pkg.version, '1.0.2')
+  assert.equal(JSON.stringify(pkg).includes('0.1.7-rc.1'), true)
+  assert.equal(pkg.version, '1.0.3')
+})
+
+test('client inline allowlist matches Harness 0.1.7-rc.2', () => {
+  const source = read('tsdown.config.ts')
+  assert.match(source, /dsh-v0\.1\.7-rc\.2/)
+  assert.match(source, /dsh-api-workspace-controller\/default-workspace/)
+  assert.doesNotMatch(source, /dsh-v0\.1\.7-rc\.1/)
 })
 
 test('leads the README with the official one-liner', () => {
