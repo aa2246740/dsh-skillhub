@@ -10,8 +10,8 @@ dsh plugin --profile web add github:aa2246740/dsh-skillhub
 
 已包含编译产物，安装无需 pnpm 或本地构建。
 
-[![GitHub Release](https://img.shields.io/badge/release-v1.0.2-blue?style=flat-square)](https://github.com/aa2246740/dsh-skillhub/releases)
-[![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-0.1.7--rc.1-4F46E5?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.1.7-rc.1)
+[![GitHub Release](https://img.shields.io/badge/release-v1.0.3-blue?style=flat-square)](https://github.com/aa2246740/dsh-skillhub/releases)
+[![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-0.1.7--rc.2-4F46E5?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.1.7-rc.2)
 [![License](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/aa2246740/dsh-skillhub?style=flat-square)](https://github.com/aa2246740/dsh-skillhub/stargazers)
 
@@ -54,7 +54,7 @@ dsh plugin --profile web add github:aa2246740/dsh-skillhub
 dsh plugin --profile web add github:aa2246740/dsh-skillhub
 
 # 或者使用 npx
-npx @deepseek-ai/dsh@0.1.7-rc.1 plugin --profile web add github:aa2246740/dsh-skillhub
+npx @deepseek-ai/dsh@0.1.7-rc.2 plugin --profile web add github:aa2246740/dsh-skillhub
 ```
 
 ### 2. 重启生效
