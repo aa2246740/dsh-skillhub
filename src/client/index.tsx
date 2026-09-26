@@ -15,6 +15,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings-general/client'
 import { SkillHubPanel } from './SkillHubPanel.tsx'
 import { en, zh, type SkillHubKey } from './locales.ts'
 import css from './SkillHubPanel.module.css'
+import { connectSlashRefresh, type SkillClientLoader } from './slash-refresh.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -23,7 +24,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 export const name = 'dsh-skillhub-client'
-export const inject = ['slots', 'locale']
+export const inject = ['slots', 'locale', 'loader']
 
 const NS = 'skillhub'
 
@@ -32,6 +33,8 @@ const PANEL_MARGIN = 12
 const UNPLACED: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
 
 export function apply(ctx: ClientContext) {
+  ctx.effect(() => connectSlashRefresh(ctx.get('loader') as SkillClientLoader,
+    error => { ctx.logger.warn(`SkillHub autocomplete refresh failed: ${String(error)}`) }), 'dsh-skillhub: autocomplete refresh')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-skillhub: dictionaries')
   const t = ctx.locale.bind(NS)
 

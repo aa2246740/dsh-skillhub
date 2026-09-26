@@ -10,8 +10,8 @@ dsh plugin --profile web add github:aa2246740/dsh-skillhub
 
 已包含编译产物，安装无需 pnpm 或本地构建。
 
-[![GitHub Release](https://img.shields.io/badge/release-v1.0.2-blue?style=flat-square)](https://github.com/aa2246740/dsh-skillhub/releases)
-[![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-0.1.7--rc.1-4F46E5?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.1.7-rc.1)
+[![GitHub Release](https://img.shields.io/badge/release-v1.0.3-blue?style=flat-square)](https://github.com/aa2246740/dsh-skillhub/releases)
+[![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-0.1.7--rc.2-4F46E5?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.1.7-rc.2)
 [![License](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/aa2246740/dsh-skillhub?style=flat-square)](https://github.com/aa2246740/dsh-skillhub/stargazers)
 
@@ -38,7 +38,7 @@ dsh plugin --profile web add github:aa2246740/dsh-skillhub
 - 🎯 **三层作用范围**：全局设置机器默认值、项目管理工程级偏好、单对话按需微调，互不干扰。
 - 🔄 **智能向下传导**：全局操作同步覆盖所有层，项目操作同步所属对话，对话临时覆盖，新会话自动继承。
 - 🔌 **MCP 服务联动支持**：独立的 MCP 页签，按服务动态隐藏/暴露工具，进程常驻。
-- 🎨 **原生细节融合**：无感切换作用范围（彻底消除骨架屏闪烁），带开关生效贴心提示（如刷新页面以载入 `/` 自动补全）。
+- 🎨 **原生细节融合**：切换作用范围时保留列表；开关保存后自动重新加载 `/` 技能补全，桌面端也无需刷新窗口。
 - 🚀 **开箱即用**：`main` 分支已内置编译产物，用户端免装编译环境、免配置 `allowBuilds`。
 
 ---
@@ -54,7 +54,7 @@ dsh plugin --profile web add github:aa2246740/dsh-skillhub
 dsh plugin --profile web add github:aa2246740/dsh-skillhub
 
 # 或者使用 npx
-npx @deepseek-ai/dsh@0.1.7-rc.1 plugin --profile web add github:aa2246740/dsh-skillhub
+npx @deepseek-ai/dsh@0.1.7-rc.2 plugin --profile web add github:aa2246740/dsh-skillhub
 ```
 
 ### 2. 重启生效
@@ -123,7 +123,7 @@ A: DSH 插件在服务启动时编排 Context 树。请在运行 DSH 的终端�
 <details>
 <summary><b>Q: 为什么开启了某个 Skill，输入框输入 <code>/</code> 没有立刻补全？</b></summary>
 
-A: DSH 的斜杠命令目录在前端页面生命周期内缓存，开启后只需刷新一次浏览器页面（Cmd+R / F5），新的技能命令就会出现在补全列表中；而模型端下一次对话直接生效。
+A: SkillHub 保存开关后，会通过官方 Cordis 生命周期重新挂载技能补全插件，清掉其旧目录缓存。重新打开 `/` 即可看到新列表，不需要 Cmd+R、F5 或重启桌面端。也可点击技能面板右上角“更多操作 → 刷新 / 补全”手动重试。模型下一次请求使用新设置；已经读入历史的技能正文不会被删除。
 </details>
 
 <details>

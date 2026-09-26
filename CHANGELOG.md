@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- 技能开关保存后，通过公开的 Loader/Fiber 生命周期重新挂载官方技能补全客户端，清除其会话目录缓存；不刷新整个页面，不重启 Host，也不修改官方代码。
+- 增加“刷新 / 补全”手动入口；通过 BroadcastChannel 通知其他窗口。刷新失败时区分已保存的开关与尚未更新的补全。
+- 使用 RC2 的真实 Cordis、Loader、输入触发器和官方技能客户端构建产物，验证旧缓存复现、同会话启停、多会话隔离、重复通知合并及 SkillHub 自身热加载的监听清理。
+
+## 1.0.3
+
+### 兼容
+
+- 开发依赖钉在官方 `@deepseek-ai/dsh-*@0.1.7-rc.2`（tag `dsh-v0.1.7-rc.2`，SHA `477b4f420553e8a52c2fbccc464d7561b239c443`）。peer 范围仍是 `>=0.1.7-rc.1 <0.1.8`：接受 `0.1.7-rc.2`，拒绝 `0.1.7` alpha。
+- 客户端内联白名单与该 tag 的 `packages/client/tsdown.client.ts` `INLINE_SAFE` 对齐，补上 `@deepseek-ai/dsh-api-workspace-controller/default-workspace`。平台模块表没有变化。
+- Skill 注册、设置页 `settings.section`、composer `conversation.input.left` 的 `sessionId` / `useSessions`，以及现用图标名在 rc.2 上保持可用。rc.2 的 Button 改为 forwardRef、Menu/Tooltip 增加可选 shortcut，现有调用不需要改参数。
+
 ## 1.0.2
 
 ### 兼容

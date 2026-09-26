@@ -10,6 +10,7 @@ import type { CatalogNode, CatalogPayload, Gate, GroupChild, GroupGate, HomeKind
 import { fetchCatalog, postCatalog } from './catalog-api.ts'
 import type { SkillHubKey } from './locales.ts'
 import css from './SkillHubPanel.module.css'
+import { refreshSkillAutocomplete } from './slash-refresh.ts'
 
 export type SkillHubSurface = 'page' | 'popover'
 type Copy = Translate<SkillHubKey>
@@ -229,10 +230,17 @@ export function SkillHubPanel(props: {
       const next = await postCatalog('/toggle', { layer, ...target, ...(sessionId ? { sessionId } : {}), ...(folder ? { folder } : {}) })
       if (key === activeKey.current) {
         setCatalog(next)
-        noticeSeq.current += 1
-        setNotice({ key: on ? 'refresh.hintOn' : 'refresh.hintOff', seq: noticeSeq.current })
       }
       notifyCatalogChanged(layer)
+      let refreshed = true
+      try { await refreshSkillAutocomplete() } catch (caught) {
+        refreshed = false
+        console.warn('[skillhub] Saved skills but autocomplete refresh failed:', caught)
+      }
+      if (key === activeKey.current) {
+        noticeSeq.current += 1
+        setNotice({ key: refreshed ? (on ? 'refresh.hintOn' : 'refresh.hintOff') : 'refresh.partial', seq: noticeSeq.current })
+      }
     } catch (caught) {
       if (key === activeKey.current) setError(String(caught))
     } finally { pending.current = false; setBusy(false) }
@@ -246,9 +254,25 @@ export function SkillHubPanel(props: {
   const moreItems = [
     { id: 'allOn', label: t('allOn'), disabled: moreDisabled },
     { id: 'allOff', label: t('allOff'), disabled: moreDisabled },
+    ...(tab === 'skills' ? [{ id: 'refreshSlash', label: t('refresh.slash'), disabled: busy }] : []),
   ]
+  const refreshSlash = async () => {
+    if (pending.current) return
+    pending.current = true
+    setBusy(true)
+    let refreshed = true
+    try { await refreshSkillAutocomplete() } catch (caught) {
+      refreshed = false
+      console.warn('[skillhub] Autocomplete refresh failed:', caught)
+    } finally { pending.current = false; setBusy(false) }
+    if (key === activeKey.current) {
+      noticeSeq.current += 1
+      setNotice({ key: refreshed ? 'refresh.done' : 'refresh.failed', seq: noticeSeq.current })
+    }
+  }
   const onMoreSelect = (id: string) => {
     setMoreOpen(false)
+    if (id === 'refreshSlash') { void refreshSlash(); return }
     if (id !== 'allOn' && id !== 'allOff') return
     if (tab === 'mcp') { if (id === 'allOn') mcpBulk?.allOn(); else mcpBulk?.allOff() }
     else void mutate({ kind: 'all', on: id === 'allOn' }, id === 'allOn')
