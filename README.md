@@ -4,11 +4,7 @@
 
 *为 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness) 打造的本地技能与 MCP 服务统一开关管理插件*
 
-```bash
-dsh plugin --profile web add github:aa2246740/dsh-skillhub
-```
-
-已包含编译产物，安装无需 pnpm 或本地构建。
+已包含编译产物；普通使用无需 pnpm、本地构建或 DSHX。
 
 [![GitHub Release](https://img.shields.io/badge/release-v1.0.3-blue?style=flat-square)](https://github.com/aa2246740/dsh-skillhub/releases)
 [![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-0.1.7--rc.2-4F46E5?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.1.7-rc.2)
@@ -45,27 +41,23 @@ dsh plugin --profile web add github:aa2246740/dsh-skillhub
 
 ## 📦 安装
 
-### 1. 一键安装（推荐）
+### DSH Studio 桌面 App（推荐）
 
-在终端中执行 DeepSeek Harness 官方插件安装命令：
+打开 **设置 → 插件 → 添加插件**，在“包名或地址”中输入：
 
-```bash
-# 如果已全局安装 dsh CLI
-dsh plugin --profile web add github:aa2246740/dsh-skillhub
-
-# 或者使用 npx
-npx @deepseek-ai/dsh@0.1.7-rc.2 plugin --profile web add github:aa2246740/dsh-skillhub
+```text
+github:aa2246740/dsh-skillhub#v1.0.3
 ```
 
-### 2. 重启生效
+桌面端插件管理器负责 Desktop profile 和内置包管理器。本发布已包含编译产物；普通使用不需要 clone、构建或安装 DSHX。若应用提示刷新或重新打开，请按提示完成。
 
-安装完成后，**重启你的 DeepSeek Harness 服务**即可加载插件：
+### Web CLI
 
 ```bash
-dsh web
+dsh plugin --profile web add github:aa2246740/dsh-skillhub#v1.0.3
 ```
 
-> **提示**：DeepSeek Harness 在系统启动时编排插件树，因此安装新插件后重启服务即可在**系统设置**及**对话输入框**中看到技能与 MCP 面板。
+这条官方 CLI 命令只写入 `web` profile，不能修改 Desktop App 的 profile。对于已经运行的 Web Host，请重新打开该 Host 一次，再刷新网页；不要用这条命令给桌面 App 安装。
 
 ---
 
@@ -101,7 +93,7 @@ dsh web
 ### 更新至最新版本
 
 ```bash
-dsh plugin --profile web add github:aa2246740/dsh-skillhub
+dsh plugin --profile web add github:aa2246740/dsh-skillhub#v1.0.3
 ```
 
 ### 卸载插件
