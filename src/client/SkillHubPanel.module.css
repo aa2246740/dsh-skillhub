@@ -114,7 +114,6 @@
   overflow: hidden;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
-  background: var(--dsw-specific-menu);
   box-shadow: var(--dsw-shadow-lv3);
   color: var(--dsw-alias-label-primary);
   font-family: var(--dsw-font-family);
@@ -123,6 +122,18 @@
   transform-origin: bottom left;
   animation: skillhub-panel-enter var(--skillhub-motion-panel) var(--skillhub-ease-out);
   isolation: isolate;
+}
+
+.menu::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  background: var(--dsw-specific-menu);
+  -webkit-backdrop-filter: var(--dsw-menu-backdrop-filter, blur(40px) saturate(150%));
+  backdrop-filter: var(--dsw-menu-backdrop-filter, blur(40px) saturate(150%));
 }
 
 @keyframes skillhub-panel-enter {
