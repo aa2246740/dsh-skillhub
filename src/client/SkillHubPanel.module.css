@@ -114,7 +114,6 @@
   overflow: hidden;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
-  background: var(--dsw-specific-menu);
   box-shadow: var(--dsw-shadow-lv3);
   color: var(--dsw-alias-label-primary);
   font-family: var(--dsw-font-family);
@@ -123,6 +122,25 @@
   transform-origin: bottom left;
   animation: skillhub-panel-enter var(--skillhub-motion-panel) var(--skillhub-ease-out);
   isolation: isolate;
+}
+
+/* The fill is translucent away from darwin (--dsw-menu-surface-fill is
+   58% in light, 45% in dark), so it needs the host's own backdrop filter to
+   frost what sits behind the panel. Without it the chat stays legible through
+   the surface. The fill lives on a dedicated layer rather than on the
+   container, mirroring the host's own MenuSurface: a backdrop-filter on the
+   container would make it a backdrop root and a containing block for any
+   fixed descendant, which nested menus and overlays rely on. */
+.menu::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--dsw-specific-menu);
+  -webkit-backdrop-filter: var(--dsw-menu-backdrop-filter);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+  pointer-events: none;
 }
 
 @keyframes skillhub-panel-enter {
