@@ -69,13 +69,13 @@ test('peer range accepts Harness 0.2.0-rc.2 and stable 0.2.0, and rejects alphas
 test('documents the official web install one-liner', () => {
   const readme = read('README.md')
   const lead = readme.slice(0, 600)
-  assert.match(readme, /dsh plugin --profile web add @aa2246740\/dsh-skillhub@1\.0\.5/)
+  assert.match(readme, /dsh plugin --profile web add @aa2246740\/dsh-skillhub@1\.0\.6/)
   assert.match(lead, /无需 pnpm、本地构建或 DSHX/)
   assert.doesNotMatch(readme, /dshx plugin|my-plugins|activate-new-client/)
 })
 
 test('pnpm pack stages the stock bundle files', () => {
-  const packed = spawnSync('pnpm', ['pack', '--dry-run'], {
+  const packed = spawnSync(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', ['pack', '--dry-run'], {
     cwd: root,
     encoding: 'utf8',
   })

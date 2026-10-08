@@ -36,7 +36,7 @@ try {
     const profile = join(fixture, installedName === pkg.name ? 'canonical' : 'legacy-alias')
     const link = join(profile, 'node_modules', installedName)
     await mkdir(dirname(link), { recursive: true })
-    await symlink(packageRoot, link, 'dir')
+    await symlink(packageRoot, link, 'junction')
     const baseUrl = pathToFileURL(join(profile, 'cordis.yml')).href
     const rows = new Map()
     const add = (name, base, metadata) => {
