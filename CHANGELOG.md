@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.8
+
+### 兼容
+
+- 适配官方 DeepSeek Harness `0.2.1-rc.2`（tag `dsh-v0.2.1-rc.2`，SHA `687f282e8625c6b8d11ff58211a90524be2e4317`）。
+- `@deepseek-ai/dsh-*` peer 与 `engines.dsh` 均为 `>=0.2.1-rc.1 <0.2.2`，与 DSHX 0.9.7（devkit #15）对 `@deepseek-ai/dsh` 的范围相同。接受 `0.2.1-rc.1` / `0.2.1-rc.2` / 稳定 `0.2.1`，拒绝 `0.2.1` alpha 与 `0.2.0-rc.2`。
+- 开发依赖钉在官方 `@deepseek-ai/dsh-*@0.2.1-rc.2`。Cordis 钉在 `4.0.5`，Schemastery 钉在 `3.18.5`（与该 Host 一致）。
+- Host 自 0.2.1 起优先读 `engines.dsh`；本包同步声明该字段。
+
 ## 1.0.7
 
 ### 修复
