@@ -252,7 +252,15 @@
 
 .root[data-surface='popover'] .body,
 .root[data-surface='popover'] .mcpBody {
-  max-height: min(480px, 60vh);
+  height: min(480px, 60vh);
+  overflow-y: auto;
+}
+
+/* The popover body is a fixed height. Let an empty card fill it and stay
+   centered; the page surface keeps the content-sized card. */
+.root[data-surface='popover'] .emptyCard {
+  flex: 1 1 auto;
+  margin-block: 0;
 }
 
 .error,
