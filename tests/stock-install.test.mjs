@@ -70,7 +70,9 @@ test('peer range accepts Harness 0.2.1-rc.5 and rejects alphas, 0.2.0, and 0.1.7
 test('documents the official web install one-liner', () => {
   const readme = read('README.md')
   const lead = readme.slice(0, 600)
-  assert.match(readme, /dsh plugin --profile web add @aa2246740\/dsh-skillhub@1\.0\.9/)
+  assert.match(readme, /dsh plugin --profile web add @aa2246740\/dsh-skillhub@1\.0\.8/)
+  assert.match(readme, /github:aa2246740\/dsh-skillhub#v1\.0\.8/)
+  assert.doesNotMatch(readme, /@aa2246740\/dsh-skillhub@1\.0\.9|dsh-skillhub#v1\.0\.9/)
   assert.match(lead, /无需 pnpm、本地构建或 DSHX/)
   assert.doesNotMatch(readme, /dshx plugin|my-plugins|activate-new-client/)
 })
