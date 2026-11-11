@@ -1,9 +1,6 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useId, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import {
-  IconSkillOutlineRegular,
-  useAnchoredPosition,
-} from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconSkillOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -31,6 +28,81 @@ const NS = 'skillhub'
 const PANEL_GAP = 8
 const PANEL_MARGIN = 12
 const UNPLACED: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
+/**
+ * Harness 0.2.2 removed `useAnchoredPosition` from the primitives: portaled
+ * panels follow their trigger through CSS Anchor Positioning. Keep a measured
+ * fallback for browsers that do not ship the anchor properties yet.
+ */
+const CSS_ANCHORS = typeof CSS !== 'undefined' && typeof CSS.supports === 'function'
+  && CSS.supports('position-anchor: --dsh-skillhub-anchor')
+
+/**
+ * Placement guard for the portaled panel. CSS Anchor Positioning keeps it beside
+ * the trigger; engines without the anchor properties — or a layout where the
+ * anchored box lands off the layout viewport — fall back to a measured position.
+ * The measured path mirrors the pre-0.2.2 behaviour: below the trigger, flipped
+ * above when the panel does not fit, clamped into the viewport on both axes.
+ */
+function usePanelPlacement(
+  open: boolean,
+  triggerRef: RefObject<HTMLButtonElement>,
+  panelRef: RefObject<HTMLDivElement>,
+): CSSProperties | undefined {
+  const [fallback, setFallback] = useState<CSSProperties | undefined>(CSS_ANCHORS ? undefined : UNPLACED)
+  const measuring = useRef(!CSS_ANCHORS)
+  useEffect(() => {
+    if (!open) return
+    let frame = 0
+    const measure = () => {
+      const trigger = triggerRef.current
+      const panel = panelRef.current
+      if (trigger === null || panel === null) return
+      const rect = trigger.getBoundingClientRect()
+      const width = panel.offsetWidth
+      const height = panel.offsetHeight
+      const below = rect.bottom + PANEL_GAP
+      setFallback({
+        left: Math.min(
+          Math.max(PANEL_MARGIN, rect.left),
+          Math.max(PANEL_MARGIN, window.innerWidth - width - PANEL_MARGIN),
+        ),
+        top: below + height <= window.innerHeight - PANEL_MARGIN
+          ? below
+          : Math.max(PANEL_MARGIN, rect.top - PANEL_GAP - height),
+        visibility: 'visible',
+      })
+    }
+    const place = () => {
+      if (measuring.current) {
+        measure()
+        return
+      }
+      const panel = panelRef.current
+      if (panel === null) return
+      const rect = panel.getBoundingClientRect()
+      const stranded = rect.width === 0 || rect.height === 0
+        || rect.bottom <= 0 || rect.right <= 0
+        || rect.top >= window.innerHeight || rect.left >= window.innerWidth
+      if (!stranded) return
+      // The anchored box was not resolvable here: measure from the trigger instead.
+      measuring.current = true
+      measure()
+    }
+    const schedule = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(place)
+    }
+    schedule()
+    window.addEventListener('resize', schedule)
+    window.addEventListener('scroll', schedule, true)
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('resize', schedule)
+      window.removeEventListener('scroll', schedule, true)
+    }
+  }, [open, panelRef, triggerRef])
+  return fallback
+}
 
 export function apply(ctx: ClientContext) {
   ctx.effect(() => connectSlashRefresh(ctx.get('loader') as SkillClientLoader,
@@ -75,13 +147,12 @@ function SkillHubChip(props: PropsRuntime<'conversation.input.left'> & PropsLoca
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
-  const panelPosition = useAnchoredPosition({
-    open,
-    anchorRef: triggerRef,
-    panelRef,
-    gap: PANEL_GAP,
-    margin: PANEL_MARGIN,
-  })
+  // Anchor names are document-scoped, so every chip instance owns its own.
+  const anchorId = useId()
+  const anchorStyle: CSSProperties & Record<'--dsh-skillhub-anchor', string> = {
+    '--dsh-skillhub-anchor': `--dsh-skillhub-${anchorId.replaceAll(':', '')}`,
+  }
+  const placement = usePanelPlacement(open, triggerRef, panelRef)
 
   useEffect(() => {
     if (!open) return
@@ -115,6 +186,7 @@ function SkillHubChip(props: PropsRuntime<'conversation.input.left'> & PropsLoca
         ref={triggerRef}
         type="button"
         className={css.trigger}
+        style={anchorStyle}
         data-open={open ? '' : undefined}
         aria-expanded={open}
         aria-label={props.t('chip.aria')}
@@ -129,7 +201,7 @@ function SkillHubChip(props: PropsRuntime<'conversation.input.left'> & PropsLoca
           <div
             ref={panelRef}
             className={css.menu}
-            style={panelPosition ?? UNPLACED}
+            style={{ ...anchorStyle, ...placement }}
             role="dialog"
             aria-modal="false"
             aria-label={props.t('chip.aria')}

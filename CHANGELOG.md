@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.10
+
+### 适配 DeepSeek Harness 0.2.2
+
+- 修复 0.2.2 上对话输入框上方的「技能」胶囊整个消失：0.2.2 的 `@deepseek-ai/dsh-client-ui-primitives` 移除了 `useAnchoredPosition`（官方升级指引 `v0.2.2-alpha.2/css-anchored-menus`），1.0.9 在胶囊首次渲染时调用它会抛错，插槽子树随之卸载。改为 CSS Anchor Positioning：触发器声明 `anchor-name`，弹出层用 `position-anchor` + `top: anchor(bottom)` 跟随，空间不足时靠 `flip-block` 翻到上方。不支持锚点属性的浏览器仍走原来的测量兜底（下沿对齐、越界翻转、视口内收边）。
+- `engines.dsh` 放宽为 `>=0.2.1-rc.1 <0.3.0`，`peerDependencies` / `devDependencies` 同步放宽；`@deepseek-ai/cordis` 接受 4.1.0，`@deepseek-ai/schemastery` 接受 3.19.0。1.0.9 的 `<0.2.2` 上界会让 0.2.2 上的安装被判为版本不匹配。
+- 设置页 `skill&mcp` 与开关数据不受影响，升级只需替换安装项。
+
 ## 1.0.9
 
 ### 修复

@@ -45,34 +45,44 @@ test('ships the prebuilt web client without machine paths', () => {
   assert.doesNotMatch(client, /(?:^|[\s"'`=(])(?:\/(?:Users|home|opt|var|tmp|private|agent)\/|[A-Za-z]:\\)/)
 })
 
-test('peer range accepts Harness 0.2.1-rc.5 and rejects alphas, 0.2.0, and 0.1.7-rc.2', () => {
+test('peer range accepts Harness 0.2.2 prereleases under npm and dsh runtime semantics', () => {
   const pkg = JSON.parse(read('package.json'))
+  const range = '>=0.2.1-rc.1 <0.3.0-0 || >=0.2.2-rc.1 <0.3.0-0'
+  const runtimeSatisfies = (version, subject) => semver.satisfies(version, subject, { includePrerelease: true })
   const peers = Object.entries(pkg.peerDependencies).filter(([name]) => name.startsWith('@deepseek-ai/dsh-'))
   assert.ok(peers.length >= 11)
-  for (const [name, range] of peers) {
-    assert.equal(range, '>=0.2.1-rc.1 <0.2.2', name)
-    assert.equal(pkg.devDependencies[name], '>=0.2.1-rc.1 <0.2.2', name)
+  for (const [name, declared] of peers) {
+    assert.equal(declared, range, name)
+    assert.equal(pkg.devDependencies[name], range, name)
+    // npm decides peers with strict semver: a prerelease range must name 0.2.2 itself.
     assert.equal(satisfies('0.2.1-rc.5', range), true, name)
     assert.equal(satisfies('0.2.1', range), true, name)
+    assert.equal(satisfies('0.2.2-rc.2', range), true, name)
+    assert.equal(satisfies('0.2.2', range), true, name)
     assert.equal(satisfies('0.2.0-rc.2', range), false, name)
     assert.equal(satisfies('0.2.0', range), false, name)
     assert.equal(satisfies('0.2.0-alpha', range), false, name)
     assert.equal(satisfies('0.2.1-alpha.1', range), false, name)
     assert.equal(satisfies('0.1.7-rc.2', range), false, name)
-    assert.equal(satisfies('0.2.2', range), false, name)
+    assert.equal(satisfies('0.3.0-rc.1', range), false, name)
+    // dsh-app-boot evaluates engines.dsh with includePrerelease.
+    assert.equal(runtimeSatisfies('0.2.2-rc.2', range), true, name)
+    assert.equal(runtimeSatisfies('0.3.0-rc.1', range), false, name)
   }
   assert.equal(JSON.stringify(pkg).includes('0.1.5-rc'), false)
   assert.equal(JSON.stringify(pkg).includes('0.1.7-rc'), false)
   assert.equal(JSON.stringify(pkg).includes('0.2.0-alpha'), false)
-  assert.equal(pkg.version, '1.0.9')
+  assert.equal(pkg.version, '1.0.10')
+  assert.equal(pkg.engines.dsh, range)
+  assert.equal(runtimeSatisfies('0.2.2-rc.2', pkg.engines.dsh), true)
 })
 
 test('documents the official web install one-liner', () => {
   const readme = read('README.md')
   const lead = readme.slice(0, 600)
-  assert.match(readme, /dsh plugin --profile web add @aa2246740\/dsh-skillhub@1\.0\.8/)
-  assert.match(readme, /github:aa2246740\/dsh-skillhub#v1\.0\.8/)
-  assert.doesNotMatch(readme, /@aa2246740\/dsh-skillhub@1\.0\.9|dsh-skillhub#v1\.0\.9/)
+  assert.match(readme, /dsh plugin --profile web add @aa2246740\/dsh-skillhub@1\.0\.10/)
+  assert.match(readme, /github:aa2246740\/dsh-skillhub#v1\.0\.10/)
+  assert.doesNotMatch(readme, /@aa2246740\/dsh-skillhub@1\.0\.8|dsh-skillhub#v1\.0\.8/)
   assert.match(lead, /无需 pnpm、本地构建或 DSHX/)
   assert.doesNotMatch(readme, /dshx plugin|my-plugins|activate-new-client/)
 })
