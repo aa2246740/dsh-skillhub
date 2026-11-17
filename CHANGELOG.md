@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.10-rc3.1
+
+### 兼容
+
+- 适配 DeepSeek Harness **0.2.2-rc.3**：`engines.dsh` 与全部 `@deepseek-ai/dsh-*` peer/devDependencies 范围从 `>=0.2.1-rc.1 <0.2.2` 升到 `>=0.2.2-rc.1 <0.2.3-0`（与 dsh-ops 等已适配插件的范围写法一致，接受 0.2.2-rc.x 与稳定版 0.2.2，拒绝 0.2.1 及更早、0.2.3 alpha）。
+- 预构建产物（`lib/dsh-skillhub.js`、`lib/client.js`）经核对无需重新编译：rc.3 前端内联模块表（`dsh-web-frontend/dist` 的 staticModules）仍包含 `@deepseek-ai/dsh-client-ui-primitives`、`@deepseek-ai/dsh-client-ui-slots`、react、react-dom，宿主侧 `dsh-skill` 的 `registerProvider`/`SkillProviderControl`、`dsh-host-webserver` 的 `register({kind:'prefix'})`、`agent/created` 事件、`scopeOf`、`settings.configure` 均未变；cordis 4.1.0 与 schemastery 3.19.0 落在原有 `^` 范围内。
+- **修复 rc.3 前端崩溃**：`useAnchoredPosition` 在 0.2.2-rc.3 的宿主内联 `dsh-client-ui-primitives` 模块中被移除（仅剩 `useAnchoredMaxHeight`），预构建客户端从模块表取到 `undefined` 并在胶囊挂载时抛错，导致设置页与输入框上方入口整体消失。修复：新增本地移植 `src/client/use-anchored-position.ts`（逐字移植 0.2.1 实现与 `overlayTopMargin` 助手），入口改用本地实现；`lib/client.js` 同步注入等价 shim，调用点不再依赖宿主导出。其余 14 个 primitives 导入（Button/Input/Menu/Pill/Tag/Toast/Tooltip/各图标/writeClipboard）在 rc.3 均保留，无需改动。
+- 版本号升为 `1.0.10-rc3.1` 以区别上游 1.0.9；README 徽标、版本对照表、构建说明同步更新。
+
 ## 1.0.9
 
 ### 修复
