@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url'
 import { runInNewContext } from 'node:vm'
 
 const harness = process.env.DSHX_HARNESS
-assert.ok(harness, 'Set DSHX_HARNESS to the official RC2 checkout')
+assert.ok(harness, 'Set DSHX_HARNESS to the official RC3 checkout')
 const packageRoot = resolve(process.argv[2])
 const pkg = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'))
 const require = createRequire(join(harness, 'packages/client/modules/package.json'))
@@ -76,4 +76,4 @@ try {
 } finally {
   await rm(fixture, { recursive: true, force: true })
 }
-console.log(JSON.stringify({ version: pkg.version, harness: '0.2.1-rc.5', results }))
+console.log(JSON.stringify({ version: pkg.version, harness: '0.2.2-rc.3', results }))
