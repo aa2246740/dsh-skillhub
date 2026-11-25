@@ -45,7 +45,7 @@ test('ships the prebuilt web client without machine paths', () => {
   assert.doesNotMatch(client, /(?:^|[\s"'`=(])(?:\/(?:Users|home|opt|var|tmp|private|agent)\/|[A-Za-z]:\\)/)
 })
 
-test('peer range accepts Harness 0.2.2-rc.3 and rejects alphas, 0.2.1, and 0.2.0-rc.2', () => {
+test('peer range accepts Harness 0.2.2-rc.5 and rejects alphas, 0.2.1, and 0.2.0-rc.2', () => {
   const pkg = JSON.parse(read('package.json'))
   const peers = Object.entries(pkg.peerDependencies).filter(([name]) => name.startsWith('@deepseek-ai/dsh-'))
   assert.ok(peers.length >= 11)
@@ -62,14 +62,14 @@ test('peer range accepts Harness 0.2.2-rc.3 and rejects alphas, 0.2.1, and 0.2.0
   assert.equal(JSON.stringify(pkg).includes('0.1.5-rc'), false)
   assert.equal(JSON.stringify(pkg).includes('0.1.7-rc'), false)
   assert.equal(JSON.stringify(pkg).includes('0.2.0-alpha'), false)
-  assert.equal(pkg.version, '1.0.10-rc3.1')
+  assert.equal(pkg.version, '1.0.10')
 })
 
 test('documents the official web install one-liner', () => {
   const readme = read('README.md')
   const lead = readme.slice(0, 600)
-  assert.match(readme, /dsh plugin --profile web add @aa2246740\/dsh-skillhub@1\.0\.10-rc3\.1/)
-  assert.match(readme, /github:aa2246740\/dsh-skillhub#v1\.0\.10-rc3\.1/)
+  assert.match(readme, /dsh plugin --profile web add @aa2246740\/dsh-skillhub@1\.0\.10/)
+  assert.match(readme, /github:aa2246740\/dsh-skillhub#v1\.0\.10/)
   assert.doesNotMatch(readme, /@aa2246740\/dsh-skillhub@1\.0\.9|dsh-skillhub#v1\.0\.9/)
   assert.match(lead, /无需 pnpm、本地构建或 DSHX/)
   assert.doesNotMatch(readme, /dshx plugin|my-plugins|activate-new-client/)

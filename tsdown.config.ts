@@ -6,19 +6,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const packageRoot = dirname(fileURLToPath(import.meta.url))
 const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
 
-function resolveHarness(): string {
-  const configured = process.env.DSHX_HARNESS?.trim()
-  if (configured) return resolve(configured)
-  const configPath = join(homedir(), '.config/dshx/harness')
-  const recorded = existsSync(configPath) ? readFileSync(configPath, 'utf8').trim() : undefined
-  if (!recorded) throw new Error('Set DSHX_HARNESS to the supported DSH checkout before building')
-  return resolve(recorded)
-}
-
-// Read the target's platform table; all outputs remain in this plugin directory.
-const harnessRoot = resolveHarness()
-process.env.DSHX_HARNESS = harnessRoot
-const adapter = join(harnessRoot, 'tools/dshx/src/client-build.js')
+const localAdapter = join(packageRoot, 'tools/client-build.js')
+const configured = process.env.DSHX_HARNESS?.trim()
+const harnessAdapter = configured ? join(resolve(configured), 'tools/dshx/src/client-build.js') : undefined
+const adapter = harnessAdapter && existsSync(harnessAdapter) ? harnessAdapter : localAdapter
 if (!existsSync(adapter)) throw new Error(`DSHX client build adapter not found: ${adapter}`)
 const { externalClientBundle } = await import(pathToFileURL(adapter).href)
 const builds = externalClientBundle(manifest.name, ['lib/types/dsh-skillhub.js'], {
